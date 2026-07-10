@@ -132,7 +132,7 @@ RestEyes/
 
 ## 测试策略
 
-**测试与编译一律在 GitHub Actions 上执行**(本地开发环境为 Linux,不安装 Swift 工具链,也无法编译 AppKit 代码)。开发循环:本地改代码 → push → `gh run watch` 观察 workflow 中 `swift test` 与打包结果 → 根据 CI 日志修正。
+**所有编译与测试都在 GitHub Actions 上执行**——本地开发环境为 Linux,不安装 Swift 工具链。开发循环:本地写代码 → push → CI 跑 `swift test` + 打包 → 看 CI 结果迭代。workflow 中测试失败则不打包。
 
 - 单元测试(CI `swift test`,macOS runner):
   - `ConfigTests`:默认值、注释/空行、未知键、非法值回退、`never` 字面量、小数分钟、边界值。
