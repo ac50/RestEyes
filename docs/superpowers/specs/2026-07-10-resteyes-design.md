@@ -132,6 +132,8 @@ RestEyes/
 
 ## 测试策略
 
+**测试与编译一律在 GitHub Actions 上执行**(本地开发环境为 Linux,不安装 Swift 工具链,也无法编译 AppKit 代码)。开发循环:本地改代码 → push → `gh run watch` 观察 workflow 中 `swift test` 与打包结果 → 根据 CI 日志修正。
+
 - 单元测试(CI `swift test`,macOS runner):
   - `ConfigTests`:默认值、注释/空行、未知键、非法值回退、`never` 字面量、小数分钟、边界值。
   - `BreakSchedulerTests`:注入假时钟,验证完整周期状态迁移、warn=0 跳过预警、skipNext 一次性语义、pause/resume、breakNow、unlock 提前结束、睡眠唤醒三种分支(短暂/超过休息时长/休息中睡眠)。
