@@ -61,6 +61,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                               skipNextArmed: scheduler.skipNextArmed)
         }
 
+        scheduler.onRestEnded = { [weak self] reason in
+            guard let self else { return }
+            if reason == .completed, self.scheduler.config.lockAfterRest {
+                ScreenLocker.lock()
+            }
+        }
+
         overlay.onUnlockRequested = { [weak self] in
             self?.scheduler.unlock(now: Date())
         }

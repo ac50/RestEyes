@@ -268,4 +268,67 @@ final class BreakSchedulerTests: XCTestCase {
         s.tick(now: after(80))
         XCTAssertEqual(s.phase, .working)
     }
+
+    // 休息结束原因:自然走完
+    func testRestEndReasonCompleted() {
+        let (s, _, _) = makeScheduler(makeConfig())
+        var reasons: [RestEndReason] = []
+        s.onRestEnded = { reasons.append($0) }
+        s.breakNow(now: t0)
+        s.tick(now: after(60))
+        XCTAssertEqual(reasons, [.completed])
+    }
+
+    // 休息结束原因:手动解锁
+    func testRestEndReasonUnlocked() {
+        let (s, _, _) = makeScheduler(makeConfig())
+        var reasons: [RestEndReason] = []
+        s.onRestEnded = { reasons.append($0) }
+        s.breakNow(now: t0)
+        s.unlock(now: after(20))
+        XCTAssertEqual(reasons, [.unlocked])
+    }
+
+    // 休息结束原因:唤醒时到期解除
+    func testRestEndReasonWake() {
+        let (s, _, _) = makeScheduler(makeConfig())
+        var reasons: [RestEndReason] = []
+        s.onRestEnded = { reasons.append($0) }
+        s.breakNow(now: t0)
+        s.systemDidWake(sleptFor: 120, now: after(120))
+        XCTAssertEqual(reasons, [.wake])
+    }
+
+    // 非休息结束的相位迁移不触发
+    func testRestEndReasonNotFiredOnOtherTransitions() {
+        let (s, _, _) = makeScheduler(makeConfig())
+        var reasons: [RestEndReason] = []
+        s.onRestEnded = { reasons.append($0) }
+        s.tick(now: after(60))    // working → warning
+        s.tick(now: after(70))    // warning → resting(进入,非结束)
+        XCTAssertTrue(reasons.isEmpty)
+        s.tick(now: after(130))   // resting 到期
+        XCTAssertEqual(reasons, [.completed])
+    }
+
+    // 回调在 onPhaseChange(.working) 之后触发
+    func testRestEndReasonFiresAfterPhaseChange() {
+        let (s, _, _) = makeScheduler(makeConfig())
+        var order: [String] = []
+        s.onPhaseChange = { if $0 == .working { order.append("phase") } }
+        s.onRestEnded = { _ in order.append("ended") }
+        s.breakNow(now: t0)
+        s.tick(now: after(60))
+        XCTAssertEqual(order, ["phase", "ended"])
+    }
+
+    // 唤醒未到期继续休息:不触发
+    func testRestEndReasonNotFiredWhenWakeKeepsResting() {
+        let (s, _, _) = makeScheduler(makeConfig())
+        var reasons: [RestEndReason] = []
+        s.onRestEnded = { reasons.append($0) }
+        s.breakNow(now: t0)
+        s.systemDidWake(sleptFor: 10, now: after(10))
+        XCTAssertTrue(reasons.isEmpty)
+    }
 }

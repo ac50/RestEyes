@@ -12,6 +12,7 @@ final class ConfigTests: XCTestCase {
         XCTAssertEqual(c.unlockAfter, .seconds(60))
         XCTAssertEqual(c.message, "休息一下,眺望远方 🌿")
         XCTAssertTrue(c.showCountdown)
+        XCTAssertTrue(c.lockAfterRest)
     }
 
     func testParseEmptyTextGivesDefaults() {
@@ -161,5 +162,13 @@ final class ConfigTests: XCTestCase {
         let c = Config.parse("work_minutes = 30\rrest_minutes = 5\r")
         XCTAssertEqual(c.workMinutes, 30)
         XCTAssertEqual(c.restMinutes, 5)
+    }
+
+    // lock_after_rest 解析:on/off/非法值回退
+    func testLockAfterRestParsing() {
+        XCTAssertFalse(Config.parse("lock_after_rest = off").lockAfterRest)
+        XCTAssertTrue(Config.parse("lock_after_rest = on").lockAfterRest)
+        XCTAssertTrue(Config.parse("lock_after_rest = yes").lockAfterRest)
+        XCTAssertTrue(Config.parse("").lockAfterRest)
     }
 }

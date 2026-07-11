@@ -12,6 +12,7 @@ public struct Config: Equatable {
     public var unlockAfter: UnlockAfter = .seconds(60)
     public var message: String = "休息一下,眺望远方 🌿"
     public var showCountdown: Bool = true
+    public var lockAfterRest: Bool = true
 
     public init() {}
 
@@ -26,6 +27,7 @@ public struct Config: Equatable {
     unlock_after = 60      # 解锁按钮出现时机:秒数;0 = 一开始就显示;never = 永不显示
     message = 休息一下,眺望远方 🌿
     show_countdown = on    # 遮罩上是否显示剩余时间倒计时(on/off)
+    lock_after_rest = on   # 休息自然结束后进入系统锁屏;手动解锁不触发(on/off)
     """
 
     public static var defaultURL: URL {
@@ -66,6 +68,9 @@ public struct Config: Equatable {
             case "show_countdown":
                 if value == "on" { c.showCountdown = true }
                 else if value == "off" { c.showCountdown = false }
+            case "lock_after_rest":
+                if value == "on" { c.lockAfterRest = true }
+                else if value == "off" { c.lockAfterRest = false }
             default:
                 continue
             }

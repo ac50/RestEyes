@@ -10,10 +10,17 @@ public struct TickInfo: Equatable {
     public var unlockVisible: Bool
 }
 
+public enum RestEndReason: Equatable {
+    case completed   // 休息时间自然走完
+    case unlocked    // 手动解锁(按钮/ESC 后门)
+    case wake        // 睡眠/锁屏期间到期,唤醒时解除
+}
+
 public final class BreakScheduler {
 
     public var onPhaseChange: ((Phase) -> Void)?
     public var onTick: ((TickInfo) -> Void)?
+    public var onRestEnded: ((RestEndReason) -> Void)?
 
     public private(set) var phase: Phase = .working
     public private(set) var skipNextArmed = false
@@ -44,7 +51,10 @@ public final class BreakScheduler {
                 } else {
                     startRest(now: now)
                 }
-            case .resting, .paused:
+            case .resting:
+                startWork(now: now)
+                onRestEnded?(.completed)
+            case .paused:
                 startWork(now: now)
             }
         }
@@ -76,6 +86,7 @@ public final class BreakScheduler {
     public func unlock(now: Date) {
         guard phase == .resting else { return }
         startWork(now: now)
+        onRestEnded?(.unlocked)
     }
 
     public func reload(config: Config, now: Date) {
@@ -89,7 +100,10 @@ public final class BreakScheduler {
     public func systemDidWake(sleptFor: TimeInterval, now: Date) {
         switch phase {
         case .resting:
-            if now >= deadline { startWork(now: now) }
+            if now >= deadline {
+                startWork(now: now)
+                onRestEnded?(.wake)
+            }
             // 未到点:遮罩继续,按墙钟走
         case .working, .warning:
             if sleptFor >= config.restMinutes * 60 {
