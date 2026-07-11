@@ -1,0 +1,17 @@
+name: build
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  test-and-build:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - name: Swift version
+        run: swift --version
+      - name: Run tests
+        run: swift test
+      - name: Build release (arm64)
+        run: swift build -c release --arch arm64
