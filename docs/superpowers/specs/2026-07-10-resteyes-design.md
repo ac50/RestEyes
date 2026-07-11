@@ -101,20 +101,25 @@ show_countdown = on    # 遮罩上是否显示剩余时间倒计时(on/off)
 
 ```
 RestEyes/
-├─ Package.swift
-├─ Sources/RestEyes/
-│   ├─ main.swift              # 入口:NSApplication 组装、AppDelegate
-│   ├─ Config.swift            # 配置解析/默认值/生成默认文件(纯逻辑,可测)
-│   ├─ BreakScheduler.swift    # 计时状态机(纯逻辑,注入时钟,可测)
+├─ Package.swift               # swift-tools-version 5.10;库 + 可执行双 target
+├─ Sources/RestEyesCore/       # 纯逻辑库(不 import AppKit,可单元测试)
+│   ├─ Config.swift            # 配置解析/默认值/生成默认文件
+│   ├─ BreakScheduler.swift    # 计时状态机(注入时钟)
+│   └─ Format.swift            # 时间格式化(m:ss)
+├─ Sources/RestEyes/           # 可执行 target(AppKit)
+│   ├─ main.swift              # 入口:NSApplication 组装、AppDelegate、睡眠/锁屏
 │   ├─ OverlayController.swift # 遮罩窗口、解锁按钮、ESC 后门、kiosk、预警浮窗
 │   └─ StatusItem.swift        # 状态栏图标与菜单
-├─ Tests/RestEyesTests/
+├─ Tests/RestEyesCoreTests/    # 测试依赖库 target
 │   ├─ ConfigTests.swift
-│   └─ BreakSchedulerTests.swift
+│   ├─ BreakSchedulerTests.swift
+│   └─ FormatTests.swift
 ├─ Resources/Info.plist        # 打包用模板(LSUIElement、LSMinimumSystemVersion 等)
 ├─ .github/workflows/build.yml
 └─ README.md                   # 安装说明、配置说明、手动验收清单
 ```
+
+(实施时把纯逻辑拆为 `RestEyesCore` 库 target:测试依赖库而非可执行 target,并在编译期强制逻辑层不依赖 AppKit。)
 
 模块边界:
 
