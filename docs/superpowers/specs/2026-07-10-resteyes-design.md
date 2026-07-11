@@ -36,6 +36,16 @@
 2. 遮罩右下角「解锁」按钮:按 `unlock_after` 配置,休息开始 N 秒后出现;`0` 为一开始就显示;`never` 为永不显示。
 3. **紧急后门**:遮罩期间连续按 ESC 10 次(相邻两次间隔 ≤1.5 秒)强制解锁。任何配置下都有效,不可关闭,防止配置错误把用户锁死。
 
+休息结束后锁屏(`lock_after_rest`,默认 on):
+
+| 休息结束方式 | 是否锁屏 |
+|---|---|
+| 休息时间自然走完(含 breakNow 进入的休息) | **锁屏**(效果同 Ctrl+Cmd+Q) |
+| 手动解锁(按钮或 ESC×10 后门) | 不锁 |
+| 睡眠/锁屏中到期、唤醒时解除 | 不锁(屏幕刚解锁,不能锁回去) |
+
+锁屏后现有"锁屏暂停计时"逻辑自动衔接:解锁返回时按离开时长补偿或重置工作计时。实现上 `BreakScheduler` 发出带原因的休息结束回调(`completed`/`unlocked`/`wake`,纯逻辑可测),UI 层仅在 `completed` 且配置开启时调用锁屏。
+
 菜单动作语义:
 
 - **立即休息**:跳过预警,直接进入 `resting`。
@@ -68,9 +78,10 @@ unlock_after = 60      # 解锁按钮出现时机:秒数;0 = 一开始就显示;
 message = 休息一下,眺望远方 🌿
                        # 遮罩上显示的文字,留空 = 纯黑屏
 show_countdown = on    # 遮罩上是否显示剩余时间倒计时(on/off)
+lock_after_rest = on   # 休息自然结束后进入系统锁屏;手动解锁不触发(on/off)
 ```
 
-数值边界:`work_minutes` 有效范围 (0, 1440],`rest_minutes` (0, 1440],`warn_seconds` [0, 600],`unlock_after` [0, 86400] 或字面量 `never`。越界回退默认值。
+数值边界:`work_minutes` 有效范围 (0, 1440],`rest_minutes` (0, 1440],`warn_seconds` [0, 600],`unlock_after` [0, 86400] 或字面量 `never`。越界回退默认值。`show_countdown`/`lock_after_rest` 仅认 `on`/`off`,非法值回退默认。
 
 ## 全屏遮罩与操作屏蔽
 
@@ -149,6 +160,7 @@ RestEyes/
 ## 已知边界与风险
 
 - 用户态应用无法屏蔽:电源键、Ctrl+Cmd+Q 系统锁屏、Touch ID 快速切换用户、强制重启。接受。
+- 锁屏调用使用私有 API `SACLockScreenImmediate`(login.framework,即 Ctrl+Cmd+Q 的底层实现),无需 TCC 权限;若未来系统移除该符号,自动降级为 `CGSession -suspend`(回到登录窗口,效果等价略重)。个人分发可接受。
 - 某些系统弹窗(如 SecurityAgent 认证框)层级可能高于 shielding level。接受,属罕见场景。
 - 未签名公证:首次打开需右键。接受,个人使用。
 - `macos-26` runner 镜像若不可用,回退 `macos-15` + 最新 Xcode(deployment target 仍设 26.0,仅编译 SDK 版本差异)。
