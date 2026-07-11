@@ -11,7 +11,6 @@
 
 - 不做偏好设置窗口、不做 GUI 配置界面。
 - 不对抗系统级操作:电源键、Ctrl+Cmd+Q 系统锁屏、强制重启、SSH 远程登录均不屏蔽(用户态应用无此能力)。
-- 不做开机自启(用户可自行在「系统设置 → 登录项」添加)。
 - 不做 Intel (x86_64) 支持、不做付费签名与公证。
 - 不做空闲检测(用户离开电脑时不暂停工作计时,睡眠/锁屏除外)。
 
@@ -80,9 +79,17 @@ message = 休息一下,眺望远方 🌿
 show_countdown = on    # 遮罩上是否显示剩余时间倒计时(on/off)
 lock_after_rest = on   # 休息自然结束后进入系统锁屏;手动解锁不触发(on/off)
 wake_ends_rest = on    # 睡眠/锁屏后唤醒解锁时,直接结束休息回到工作(on/off)
+launch_at_login = on   # 开机自动启动(on/off)
 ```
 
-数值边界:`work_minutes` 有效范围 (0, 1440],`rest_minutes` (0, 1440],`warn_seconds` [0, 600],`unlock_after` [0, 86400] 或字面量 `never`。越界回退默认值。`show_countdown`/`lock_after_rest`/`wake_ends_rest` 仅认 `on`/`off`,非法值回退默认。
+数值边界:`work_minutes` 有效范围 (0, 1440],`rest_minutes` (0, 1440],`warn_seconds` [0, 600],`unlock_after` [0, 86400] 或字面量 `never`。越界回退默认值。`show_countdown`/`lock_after_rest`/`wake_ends_rest`/`launch_at_login` 仅认 `on`/`off`,非法值回退默认。
+
+## 开机自启(launch_at_login)
+
+- 用 macOS 官方 `SMAppService.mainApp` 注册/注销(ServiceManagement 框架,无需 TCC 权限);注册后出现在「系统设置 → 通用 → 登录项」,首次注册系统会发一条"已添加为登录项"通知(系统行为)。
+- 启动时与每次配置加载时(菜单重载 + 工作周期自动重读)对账:配置 `on` 且未注册 → register;`off` 且已注册 → unregister。默认 `on`。
+- 不与用户对抗:用户在系统设置里手动关闭后,系统保留用户选择,应用的注册尝试不会强行翻转。
+- 裸二进制(无 bundle id,开发场景)静默跳过。
 
 ## 全屏遮罩与操作屏蔽
 
@@ -121,7 +128,9 @@ RestEyes/
 ├─ Sources/RestEyes/           # 可执行 target(AppKit)
 │   ├─ main.swift              # 入口:NSApplication 组装、AppDelegate、睡眠/锁屏
 │   ├─ OverlayController.swift # 遮罩窗口、解锁按钮、ESC 后门、kiosk、预警浮窗
-│   └─ StatusItem.swift        # 状态栏图标与菜单
+│   ├─ StatusItem.swift        # 状态栏图标与菜单
+│   ├─ ScreenLocker.swift      # 系统锁屏(SACLockScreenImmediate + CGSession 降级)
+│   └─ LoginItem.swift         # 开机自启注册对账(SMAppService)
 ├─ Tests/RestEyesCoreTests/    # 测试依赖库 target
 │   ├─ ConfigTests.swift
 │   ├─ BreakSchedulerTests.swift
