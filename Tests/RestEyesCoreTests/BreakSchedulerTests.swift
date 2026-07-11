@@ -201,9 +201,11 @@ final class BreakSchedulerTests: XCTestCase {
         XCTAssertEqual(s.phase, .working)
     }
 
-    // 唤醒:resting 未过点 → 继续休息(墙钟)
-    func testWakeDuringRestBeforeDeadlineKeepsResting() {
-        let (s, _, _) = makeScheduler(makeConfig())
+    // 唤醒:resting 未过点且 wake_ends_rest = off → 继续休息(墙钟)
+    func testWakeDuringRestBeforeDeadlineKeepsRestingWhenDisabled() {
+        var config = makeConfig()
+        config.wakeEndsRest = false
+        let (s, _, _) = makeScheduler(config)
         s.breakNow(now: t0)
         s.systemDidWake(sleptFor: 10, now: after(10))
         XCTAssertEqual(s.phase, .resting)
@@ -322,13 +324,28 @@ final class BreakSchedulerTests: XCTestCase {
         XCTAssertEqual(order, ["phase", "ended"])
     }
 
-    // 唤醒未到期继续休息:不触发
+    // wake_ends_rest = off 时唤醒未到点继续休息:不触发结束回调
     func testRestEndReasonNotFiredWhenWakeKeepsResting() {
-        let (s, _, _) = makeScheduler(makeConfig())
+        var config = makeConfig()
+        config.wakeEndsRest = false
+        let (s, _, _) = makeScheduler(config)
         var reasons: [RestEndReason] = []
         s.onRestEnded = { reasons.append($0) }
         s.breakNow(now: t0)
         s.systemDidWake(sleptFor: 10, now: after(10))
         XCTAssertTrue(reasons.isEmpty)
+    }
+
+    // 默认 wake_ends_rest = on:未到点解锁直接结束休息进入工作,原因 .wake
+    func testWakeDuringRestBeforeDeadlineEndsRestByDefault() {
+        let (s, _, infos) = makeScheduler(makeConfig())
+        var reasons: [RestEndReason] = []
+        s.onRestEnded = { reasons.append($0) }
+        s.breakNow(now: t0)
+        s.systemDidWake(sleptFor: 10, now: after(10))
+        XCTAssertEqual(s.phase, .working)
+        XCTAssertEqual(reasons, [.wake])
+        s.tick(now: after(11))
+        XCTAssertEqual(infos().last!.remaining, 59, accuracy: 0.001)  // 新工作周期从解锁起算
     }
 }

@@ -100,11 +100,11 @@ public final class BreakScheduler {
     public func systemDidWake(sleptFor: TimeInterval, now: Date) {
         switch phase {
         case .resting:
-            if now >= deadline {
+            if now >= deadline || config.wakeEndsRest {
                 startWork(now: now)
                 onRestEnded?(.wake)
             }
-            // 未到点:遮罩继续,按墙钟走
+            // 未到点且 wake_ends_rest = off:遮罩继续,按墙钟走
         case .working, .warning:
             if sleptFor >= config.restMinutes * 60 {
                 startWork(now: now)                              // 睡够了,视为已休息

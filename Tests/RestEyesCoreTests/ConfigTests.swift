@@ -13,6 +13,7 @@ final class ConfigTests: XCTestCase {
         XCTAssertEqual(c.message, "休息一下,眺望远方 🌿")
         XCTAssertTrue(c.showCountdown)
         XCTAssertTrue(c.lockAfterRest)
+        XCTAssertTrue(c.wakeEndsRest)
     }
 
     func testParseEmptyTextGivesDefaults() {
@@ -170,5 +171,13 @@ final class ConfigTests: XCTestCase {
         XCTAssertTrue(Config.parse("lock_after_rest = on").lockAfterRest)
         XCTAssertTrue(Config.parse("lock_after_rest = yes").lockAfterRest)
         XCTAssertTrue(Config.parse("").lockAfterRest)
+    }
+
+    // wake_ends_rest 解析:on/off/非法值回退
+    func testWakeEndsRestParsing() {
+        XCTAssertFalse(Config.parse("wake_ends_rest = off").wakeEndsRest)
+        XCTAssertTrue(Config.parse("wake_ends_rest = on").wakeEndsRest)
+        XCTAssertTrue(Config.parse("wake_ends_rest = 1").wakeEndsRest)
+        XCTAssertTrue(Config.parse("").wakeEndsRest)
     }
 }
