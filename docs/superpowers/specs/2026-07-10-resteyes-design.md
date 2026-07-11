@@ -56,7 +56,7 @@
 
 - 系统睡眠或屏幕锁定时暂停计时。
 - 唤醒/解锁时:若离开时长 ≥ `rest_minutes`,视为已休息,工作计时重置重新开始;否则从暂停处继续。
-- `resting` 状态中睡眠:唤醒时若休息剩余时间已过,直接解除遮罩回到 `working`。
+- `resting` 状态中睡眠/锁屏:唤醒解锁时,`wake_ends_rest = on`(默认)直接结束休息回到 `working`(原因 `.wake`,不触发 `lock_after_rest` 锁屏);`off` 时仅当休息剩余时间已过才解除,否则遮罩按墙钟继续。
 
 ## 配置文件
 
@@ -79,9 +79,10 @@ message = 休息一下,眺望远方 🌿
                        # 遮罩上显示的文字,留空 = 纯黑屏
 show_countdown = on    # 遮罩上是否显示剩余时间倒计时(on/off)
 lock_after_rest = on   # 休息自然结束后进入系统锁屏;手动解锁不触发(on/off)
+wake_ends_rest = on    # 睡眠/锁屏后唤醒解锁时,直接结束休息回到工作(on/off)
 ```
 
-数值边界:`work_minutes` 有效范围 (0, 1440],`rest_minutes` (0, 1440],`warn_seconds` [0, 600],`unlock_after` [0, 86400] 或字面量 `never`。越界回退默认值。`show_countdown`/`lock_after_rest` 仅认 `on`/`off`,非法值回退默认。
+数值边界:`work_minutes` 有效范围 (0, 1440],`rest_minutes` (0, 1440],`warn_seconds` [0, 600],`unlock_after` [0, 86400] 或字面量 `never`。越界回退默认值。`show_countdown`/`lock_after_rest`/`wake_ends_rest` 仅认 `on`/`off`,非法值回退默认。
 
 ## 全屏遮罩与操作屏蔽
 
@@ -161,6 +162,8 @@ RestEyes/
 
 - 用户态应用无法屏蔽:电源键、Ctrl+Cmd+Q 系统锁屏、Touch ID 快速切换用户、强制重启。接受。
 - 锁屏调用使用私有 API `SACLockScreenImmediate`(login.framework,即 Ctrl+Cmd+Q 的底层实现),无需 TCC 权限;若未来系统移除该符号,自动降级为 `CGSession -suspend`(回到登录窗口,效果等价略重)。个人分发可接受。
+- 纯"熄屏"(显示器休眠)若未触发系统锁屏(用户未开"立即要求密码"),不产生任何通知,`wake_ends_rest` 检测不到;macOS 默认开启立即锁屏,不受影响。接受。
+- `wake_ends_rest = on` 时,休息刚开始即手动锁屏再解锁可跳过休息——该设置的自然结果,由用户自律。接受。
 - 某些系统弹窗(如 SecurityAgent 认证框)层级可能高于 shielding level。接受,属罕见场景。
 - 未签名公证:首次打开需右键。接受,个人使用。
 - `macos-26` runner 镜像若不可用,回退 `macos-15` + 最新 Xcode(deployment target 仍设 26.0,仅编译 SDK 版本差异)。
