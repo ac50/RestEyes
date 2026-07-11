@@ -11,6 +11,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var isAsleep = false
     private var isScreenLocked = false
 
+    /// 缺席看门狗上限:锁屏/唤醒通知丢失时,超过上限强制结束缺席,避免计时永久冻结
+    private static let absenceForceClearCeiling: TimeInterval = 3600
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         terminateIfAlreadyRunning()
         scheduler = BreakScheduler(config: Config.load(), now: Date())
@@ -93,7 +96,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func startTicking() {
         let timer = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
-            guard let self, self.absenceBeganAt == nil else { return }
+            guard let self else { return }
+            if let began = self.absenceBeganAt {
+                if Date().timeIntervalSince(began) >= Self.absenceForceClearCeiling {
+                    self.isAsleep = false
+                    self.isScreenLocked = false
+                    self.endAbsenceIfPresent()
+                }
+                return
+            }
             self.scheduler.tick(now: Date())
         }
         timer.tolerance = 0.1

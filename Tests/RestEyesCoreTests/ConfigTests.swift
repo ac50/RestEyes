@@ -155,4 +155,11 @@ final class ConfigTests: XCTestCase {
         XCTAssertEqual(c.workMinutes, 30)
         XCTAssertEqual(c.restMinutes, 5)
     }
+
+    // 孤立 \r(旧 Mac 行尾)也能解析
+    func testLoneCRLineEndingsParsed() {
+        let c = Config.parse("work_minutes = 30\rrest_minutes = 5\r")
+        XCTAssertEqual(c.workMinutes, 30)
+        XCTAssertEqual(c.restMinutes, 5)
+    }
 }
