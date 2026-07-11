@@ -35,7 +35,10 @@ public struct Config: Equatable {
 
     public static func parse(_ text: String) -> Config {
         var c = Config()
-        for rawLine in text.split(separator: "\n", omittingEmptySubsequences: false) {
+        // Swift 将 "\r\n" 视为单个 grapheme cluster,与单独的 "\n" 不相等,
+        // 直接 split(separator: "\n") 无法在 CRLF 处断行,需先归一化行尾。
+        let normalized = text.replacingOccurrences(of: "\r\n", with: "\n")
+        for rawLine in normalized.split(separator: "\n", omittingEmptySubsequences: false) {
             var line = String(rawLine)
             if let hash = line.firstIndex(of: "#") {
                 line = String(line[..<hash])
