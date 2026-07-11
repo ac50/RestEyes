@@ -246,4 +246,26 @@ final class BreakSchedulerTests: XCTestCase {
         XCTAssertEqual(infos().last!.remaining, 59, accuracy: 0.001)
         XCTAssertEqual(infos().last!.phase, .working)
     }
+
+    // reload 在 paused 中不打断暂停
+    func testReloadWhilePausedKeepsPause() {
+        let (s, _, _) = makeScheduler(makeConfig())
+        s.pause(now: after(10))
+        s.reload(config: makeConfig(work: 2), now: after(20))
+        XCTAssertEqual(s.phase, .paused)
+        s.tick(now: after(3609))
+        XCTAssertEqual(s.phase, .paused)
+        s.tick(now: after(3610))
+        XCTAssertEqual(s.phase, .working)
+    }
+
+    // breakNow 在 paused 中直接进入休息
+    func testBreakNowFromPausedEntersResting() {
+        let (s, _, _) = makeScheduler(makeConfig())
+        s.pause(now: after(10))
+        s.breakNow(now: after(20))
+        XCTAssertEqual(s.phase, .resting)
+        s.tick(now: after(80))
+        XCTAssertEqual(s.phase, .working)
+    }
 }

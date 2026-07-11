@@ -41,8 +41,8 @@ public struct Config: Equatable {
                 line = String(line[..<hash])
             }
             guard let eq = line.firstIndex(of: "=") else { continue }
-            let key = line[..<eq].trimmingCharacters(in: .whitespaces)
-            let value = line[line.index(after: eq)...].trimmingCharacters(in: .whitespaces)
+            let key = line[..<eq].trimmingCharacters(in: .whitespacesAndNewlines)
+            let value = line[line.index(after: eq)...].trimmingCharacters(in: .whitespacesAndNewlines)
 
             switch key {
             case "work_minutes":

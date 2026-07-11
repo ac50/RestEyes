@@ -148,4 +148,11 @@ final class ConfigTests: XCTestCase {
     func testDefaultURL() {
         XCTAssertTrue(Config.defaultURL.path.hasSuffix("/.config/resteyes/config.txt"))
     }
+
+    // CRLF 行尾也能解析
+    func testCRLFLineEndingsParsed() {
+        let c = Config.parse("work_minutes = 30\r\nrest_minutes = 5\r\n")
+        XCTAssertEqual(c.workMinutes, 30)
+        XCTAssertEqual(c.restMinutes, 5)
+    }
 }

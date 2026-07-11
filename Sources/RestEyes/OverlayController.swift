@@ -15,6 +15,11 @@ final class OverlayController: NSObject {
             buildWarningWindow()
         }
         warningLabel?.stringValue = "\(secondsRemaining) 秒后休息"
+        if let screen = NSScreen.main, let panel = warningWindow {
+            let f = screen.visibleFrame
+            let size = panel.frame.size
+            panel.setFrameOrigin(NSPoint(x: f.maxX - size.width - 20, y: f.minY + 20))
+        }
         warningWindow?.orderFrontRegardless()
     }
 
@@ -51,10 +56,6 @@ final class OverlayController: NSObject {
         ])
 
         panel.contentView = content
-        if let screen = NSScreen.main {
-            let f = screen.visibleFrame
-            panel.setFrameOrigin(NSPoint(x: f.maxX - size.width - 20, y: f.minY + 20))
-        }
         warningWindow = panel
         warningLabel = label
     }
@@ -74,12 +75,14 @@ final class OverlayController: NSObject {
     private var lastUnlockVisible = false
     private var escPressCount = 0
     private var lastEscPressAt = Date.distantPast
+    private var isShieldActive = false
 
     func showRest(config: Config) {
-        guard restWindows.isEmpty else { return }
+        guard !isShieldActive else { return }
+        isShieldActive = true
         self.config = config
         lastRemaining = config.restMinutes * 60
-        lastUnlockVisible = false
+        lastUnlockVisible = (config.unlockAfter == .seconds(0))
         escPressCount = 0
 
         savedPresentationOptions = NSApp.presentationOptions
@@ -90,7 +93,7 @@ final class OverlayController: NSObject {
         ]
 
         buildRestWindows()
-        updateRest(remaining: lastRemaining, unlockVisible: false)
+        updateRest(remaining: lastRemaining, unlockVisible: lastUnlockVisible)
 
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             self?.handleKeyDown(event)
@@ -113,7 +116,7 @@ final class OverlayController: NSObject {
     }
 
     func updateRest(remaining: TimeInterval, unlockVisible: Bool) {
-        guard !restWindows.isEmpty else { return }
+        guard isShieldActive else { return }
         lastRemaining = remaining
         lastUnlockVisible = unlockVisible
         let text = Format.mmss(remaining)
@@ -122,7 +125,8 @@ final class OverlayController: NSObject {
     }
 
     func hideRest() {
-        guard !restWindows.isEmpty else { return }
+        guard isShieldActive else { return }
+        isShieldActive = false
         activationTimer?.invalidate()
         activationTimer = nil
         if let monitor = keyMonitor {
@@ -164,7 +168,7 @@ final class OverlayController: NSObject {
     }
 
     private func rebuildRestWindows() {
-        guard !restWindows.isEmpty else { return }
+        guard isShieldActive else { return }
         for window in restWindows { window.orderOut(nil) }
         restWindows = []
         countdownLabels = []

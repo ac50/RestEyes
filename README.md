@@ -15,7 +15,7 @@ macOS 菜单栏应用:定时全屏遮罩,强制休息眼睛、起身活动。
 1. 从 [Releases](https://github.com/ac50/RestEyes/releases) 下载 `RestEyes.zip`,解压
 2. 把 `RestEyes.app` 拖入「应用程序」
 3. 首次运行:**右键 → 打开**(应用未做付费签名公证)。若仍被拦截,执行:
-   `xattr -dc /Applications/RestEyes.app`
+   `xattr -cr /Applications/RestEyes.app`
 4. 状态栏出现眼睛图标即在运行。开机自启可在「系统设置 → 通用 → 登录项」手动添加
 
 ## 配置

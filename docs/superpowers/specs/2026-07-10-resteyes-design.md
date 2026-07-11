@@ -130,7 +130,7 @@ RestEyes/
 - Runner:`macos-26`(Apple Silicon)。
 - 步骤:`swift test`(失败则终止,不打包)→ `swift build -c release --arch arm64` → 组装 `RestEyes.app`(拷贝可执行文件、写 Info.plist)→ `codesign --force --deep -s -`(ad-hoc)→ zip → 上传 artifact;tag 推送时用 `gh release create`(或 action)附上 zip 发 Release。
 - Info.plist 关键项:`LSUIElement = true`,`LSMinimumSystemVersion = 26.0`,`CFBundleIdentifier = com.resteyes.app`,`NSHighResolutionCapable = true`。
-- 安装:下载 zip → 解压 → 拖入「应用程序」→ 首次右键打开(未公证)。README 说明,含 `xattr -dc` 备用命令。
+- 安装:下载 zip → 解压 → 拖入「应用程序」→ 首次右键打开(未公证)。README 说明,含 `xattr -cr` 备用命令。
 
 ## 测试策略
 

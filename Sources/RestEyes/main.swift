@@ -8,6 +8,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let statusItem = StatusItemController()
     private var tickTimer: Timer?
     private var absenceBeganAt: Date?
+    private var isAsleep = false
+    private var isScreenLocked = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         terminateIfAlreadyRunning()
@@ -15,6 +17,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         wire()
         startTicking()
         observeSleepAndLock()
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        overlay.hideRest()   // 保险:退出路径下还原 presentationOptions
     }
 
     // MARK: - 组装
@@ -87,7 +93,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func startTicking() {
         let timer = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
-            self?.scheduler.tick(now: Date())
+            guard let self, self.absenceBeganAt == nil else { return }
+            self.scheduler.tick(now: Date())
         }
         timer.tolerance = 0.1
         RunLoop.main.add(timer, forMode: .common)   // 菜单打开(eventTracking)时也要走时
@@ -100,20 +107,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let wnc = NSWorkspace.shared.notificationCenter
         wnc.addObserver(forName: NSWorkspace.willSleepNotification,
                         object: nil, queue: .main) { [weak self] _ in
+            self?.isAsleep = true
             self?.noteAbsenceBegan()
         }
         wnc.addObserver(forName: NSWorkspace.didWakeNotification,
                         object: nil, queue: .main) { [weak self] _ in
-            self?.noteAbsenceEnded()
+            self?.isAsleep = false
+            self?.endAbsenceIfPresent()
         }
         let dnc = DistributedNotificationCenter.default()
         dnc.addObserver(forName: Notification.Name("com.apple.screenIsLocked"),
                         object: nil, queue: .main) { [weak self] _ in
+            self?.isScreenLocked = true
             self?.noteAbsenceBegan()
         }
         dnc.addObserver(forName: Notification.Name("com.apple.screenIsUnlocked"),
                         object: nil, queue: .main) { [weak self] _ in
-            self?.noteAbsenceEnded()
+            self?.isScreenLocked = false
+            self?.endAbsenceIfPresent()
         }
     }
 
@@ -121,8 +132,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if absenceBeganAt == nil { absenceBeganAt = Date() }
     }
 
-    private func noteAbsenceEnded() {
-        guard let began = absenceBeganAt else { return }
+    private func endAbsenceIfPresent() {
+        guard !isAsleep, !isScreenLocked, let began = absenceBeganAt else { return }
         absenceBeganAt = nil
         scheduler.systemDidWake(sleptFor: Date().timeIntervalSince(began), now: Date())
     }
