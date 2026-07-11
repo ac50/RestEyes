@@ -16,7 +16,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         terminateIfAlreadyRunning()
-        scheduler = BreakScheduler(config: Config.load(), now: Date())
+        let config = Config.load()
+        scheduler = BreakScheduler(config: config, now: Date())
+        LoginItem.sync(enabled: config.launchAtLogin)
         wire()
         startTicking()
         observeSleepAndLock()
@@ -87,7 +89,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSWorkspace.shared.open(Config.defaultURL)
         }
         statusItem.onReloadConfig = { [weak self] in
-            self?.scheduler.reload(config: Config.load(), now: Date())
+            let fresh = Config.load()
+            self?.scheduler.reload(config: fresh, now: Date())
+            LoginItem.sync(enabled: fresh.launchAtLogin)
         }
         statusItem.onQuit = { NSApp.terminate(nil) }
     }
@@ -96,6 +100,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let fresh = Config.load()
         if fresh != scheduler.config {
             scheduler.reload(config: fresh, now: Date())
+            LoginItem.sync(enabled: fresh.launchAtLogin)
         }
     }
 

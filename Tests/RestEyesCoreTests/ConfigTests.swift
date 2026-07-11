@@ -14,6 +14,7 @@ final class ConfigTests: XCTestCase {
         XCTAssertTrue(c.showCountdown)
         XCTAssertTrue(c.lockAfterRest)
         XCTAssertTrue(c.wakeEndsRest)
+        XCTAssertTrue(c.launchAtLogin)
     }
 
     func testParseEmptyTextGivesDefaults() {
@@ -179,5 +180,13 @@ final class ConfigTests: XCTestCase {
         XCTAssertTrue(Config.parse("wake_ends_rest = on").wakeEndsRest)
         XCTAssertTrue(Config.parse("wake_ends_rest = 1").wakeEndsRest)
         XCTAssertTrue(Config.parse("").wakeEndsRest)
+    }
+
+    // launch_at_login 解析:on/off/非法值回退
+    func testLaunchAtLoginParsing() {
+        XCTAssertFalse(Config.parse("launch_at_login = off").launchAtLogin)
+        XCTAssertTrue(Config.parse("launch_at_login = on").launchAtLogin)
+        XCTAssertTrue(Config.parse("launch_at_login = maybe").launchAtLogin)
+        XCTAssertTrue(Config.parse("").launchAtLogin)
     }
 }

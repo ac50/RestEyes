@@ -14,6 +14,7 @@ public struct Config: Equatable {
     public var showCountdown: Bool = true
     public var lockAfterRest: Bool = true
     public var wakeEndsRest: Bool = true
+    public var launchAtLogin: Bool = true
 
     public init() {}
 
@@ -30,6 +31,7 @@ public struct Config: Equatable {
     show_countdown = on    # 遮罩上是否显示剩余时间倒计时(on/off)
     lock_after_rest = on   # 休息自然结束后进入系统锁屏;手动解锁不触发(on/off)
     wake_ends_rest = on    # 睡眠/锁屏后唤醒解锁时,直接结束休息回到工作(on/off)
+    launch_at_login = on   # 开机自动启动(on/off)
     """
 
     public static var defaultURL: URL {
@@ -76,6 +78,9 @@ public struct Config: Equatable {
             case "wake_ends_rest":
                 if value == "on" { c.wakeEndsRest = true }
                 else if value == "off" { c.wakeEndsRest = false }
+            case "launch_at_login":
+                if value == "on" { c.launchAtLogin = true }
+                else if value == "off" { c.launchAtLogin = false }
             default:
                 continue
             }
