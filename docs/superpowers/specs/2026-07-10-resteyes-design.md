@@ -5,7 +5,7 @@
 
 ## 目标
 
-一个轻量简洁的 macOS 菜单栏应用(Apple Silicon,macOS 26+),定时用全屏遮罩强制提醒用户休息眼睛、起身活动。休息期间屏蔽所有操作(覆盖所有窗口、所有 Space、所有显示器),仅在遮罩右下角保留一个按配置出现的「解锁」按钮。无常规图形界面:配置用文本文件,状态栏一个图标。编译通过 GitHub Actions 完成(本地开发环境为 Linux,无法本地编译)。
+一个轻量简洁的 macOS 菜单栏应用(Apple Silicon,macOS 26+),定时用全屏遮罩强制提醒用户休息眼睛、起身活动。休息期间屏蔽所有操作(覆盖所有窗口、所有 Space、所有显示器),仅在遮罩右下角保留一个按配置出现的「解锁」按钮。无常规图形界面:配置用文本文件,状态栏一个图标。**测试与编译全部通过 GitHub Actions 完成**——本地开发环境为 Linux,不做任何本地编译或测试,每次验证均以 push 触发 CI 为准。
 
 ## 非目标
 
@@ -122,19 +122,21 @@ RestEyes/
 - `BreakScheduler`:纯状态机,依赖注入的时钟与定时器抽象;对外发出状态变更回调(进入预警/进入休息/解除休息/tick);对内接收动作(breakNow/skipNext/pause/resume/unlock/reload)。不 import AppKit。
 - `OverlayController` / `StatusItem`:只消费状态机回调、只发送动作,互不依赖。
 
-## 编译与发布(GitHub Actions)
+## 测试与编译(GitHub Actions)
 
-- Workflow `.github/workflows/build.yml`,触发:push(main)、tag(`v*`)、workflow_dispatch。
+开发闭环:本地(Linux)只写代码 → `git push` → GitHub Actions 在 macOS runner 上跑测试和编译 → 用 `gh run watch` / `gh run view --log` 查看结果。**任何「测试通过 / 编译成功」的结论都必须以 CI 运行结果为证据**,本地不运行 swift 工具链。
+
+- Workflow `.github/workflows/build.yml`,触发:push(所有分支)、tag(`v*`)、workflow_dispatch。
 - Runner:`macos-26`(Apple Silicon)。
-- 步骤:`swift test` → `swift build -c release --arch arm64` → 组装 `RestEyes.app`(拷贝可执行文件、写 Info.plist)→ `codesign --force --deep -s -`(ad-hoc)→ zip → 上传 artifact;tag 推送时用 `gh release create`(或 action)附上 zip 发 Release。
+- 步骤:`swift test`(失败则终止,不打包)→ `swift build -c release --arch arm64` → 组装 `RestEyes.app`(拷贝可执行文件、写 Info.plist)→ `codesign --force --deep -s -`(ad-hoc)→ zip → 上传 artifact;tag 推送时用 `gh release create`(或 action)附上 zip 发 Release。
 - Info.plist 关键项:`LSUIElement = true`,`LSMinimumSystemVersion = 26.0`,`CFBundleIdentifier = com.resteyes.app`,`NSHighResolutionCapable = true`。
 - 安装:下载 zip → 解压 → 拖入「应用程序」→ 首次右键打开(未公证)。README 说明,含 `xattr -dc` 备用命令。
 
 ## 测试策略
 
-开发环境为 Linux,**所有编译与测试都在 GitHub Actions 的 macOS runner 上运行**,本地不做任何 swift 编译。开发循环:改代码 → push → Actions 跑 `swift test` + 打包 → 看结果。
+所有测试在 GitHub Actions 的 macOS runner 上执行(push 即触发),本地不跑测试。
 
-- 单元测试(CI `swift test`,macOS runner):
+- 单元测试(CI `swift test`):
   - `ConfigTests`:默认值、注释/空行、未知键、非法值回退、`never` 字面量、小数分钟、边界值。
   - `BreakSchedulerTests`:注入假时钟,验证完整周期状态迁移、warn=0 跳过预警、skipNext 一次性语义、pause/resume、breakNow、unlock 提前结束、睡眠唤醒三种分支(短暂/超过休息时长/休息中睡眠)。
 - 手动验收清单(写入 README):多显示器覆盖、全屏应用覆盖、Cmd+Tab/Cmd+Q 被屏蔽、解锁按钮三种模式、ESC×10 后门、插拔显示器、深浅色菜单栏图标。
