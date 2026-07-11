@@ -4,6 +4,9 @@ on:
   push:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   test-and-build:
     runs-on: macos-26
@@ -15,3 +18,18 @@ jobs:
         run: swift test
       - name: Build release (arm64)
         run: swift build -c release --arch arm64
+      - name: Assemble app bundle
+        run: |
+          BIN_PATH=$(swift build -c release --arch arm64 --show-bin-path)
+          APP=build/RestEyes.app
+          mkdir -p "$APP/Contents/MacOS"
+          cp "$BIN_PATH/RestEyes" "$APP/Contents/MacOS/RestEyes"
+          cp Resources/Info.plist "$APP/Contents/Info.plist"
+          codesign --force --deep --sign - "$APP"
+      - name: Zip app
+        run: ditto -c -k --keepParent build/RestEyes.app build/RestEyes.zip
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: RestEyes
+          path: build/RestEyes.zip
