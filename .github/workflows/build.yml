@@ -33,3 +33,10 @@ jobs:
         with:
           name: RestEyes
           path: build/RestEyes.zip
+      - name: Create GitHub release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" build/RestEyes.zip \
+            --title "RestEyes $GITHUB_REF_NAME" --generate-notes
