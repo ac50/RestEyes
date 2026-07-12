@@ -126,7 +126,14 @@ final class OverlayController: NSObject {
 
     func hideRest() {
         guard isShieldActive else { return }
-        isShieldActive = false
+        detachRestInteraction()
+        removeRestWindows()
+    }
+
+    /// 停掉遮罩交互(每秒抢焦点定时器、吞键监听、屏幕参数监听)并恢复 presentationOptions,
+    /// 但保留黑窗在屏、isShieldActive 仍为 true。用于「休息结束→锁屏」:先停交互(让用户能
+    /// 在锁屏界面输入密码),黑窗留到锁屏界面盖上后再由 removeRestWindows() 撤除。幂等。
+    func detachRestInteraction() {
         activationTimer?.invalidate()
         activationTimer = nil
         if let monitor = keyMonitor {
@@ -137,11 +144,16 @@ final class OverlayController: NSObject {
             NotificationCenter.default.removeObserver(observer)
             screenObserver = nil
         }
+        NSApp.presentationOptions = savedPresentationOptions
+    }
+
+    /// 撤掉全部黑窗并复位遮罩状态。幂等(空数组时为 no-op)。
+    func removeRestWindows() {
         for window in restWindows { window.orderOut(nil) }
         restWindows = []
         countdownLabels = []
         unlockButtons = []
-        NSApp.presentationOptions = savedPresentationOptions
+        isShieldActive = false
     }
 
     // MARK: - 私有
