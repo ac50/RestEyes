@@ -11,8 +11,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var isAsleep = false
     private var isScreenLocked = false
 
+    /// 休息自然结束触发的锁屏尚未撤除黑窗时为 true(等 screenIsLocked 或兜底超时后撤)。
+    private var pendingRestWindowRemoval = false
+    private var lockConfirmFallbackTimer: Timer?
+
     /// 缺席看门狗上限:锁屏/唤醒通知丢失时,超过上限强制结束缺席,避免计时永久冻结
     private static let absenceForceClearCeiling: TimeInterval = 3600
+
+    /// 锁屏后等待锁屏界面盖上的兜底上限:超时仍未收到 screenIsLocked 就直接撤黑窗,防滞留。
+    private static let lockConfirmFallback: TimeInterval = 2.5
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         terminateIfAlreadyRunning()
@@ -36,7 +43,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             switch phase {
             case .working:
                 overlay.hideWarning()
-                overlay.hideRest()
+                // 撤休息遮罩改由 onRestEnded 统一收口(见下),以支持「锁屏前不撤窗」。
                 reloadConfigIfChanged()      // 每个工作周期开始自动重读配置
             case .warning:
                 overlay.showWarning(secondsRemaining: scheduler.config.warnSeconds)
@@ -63,10 +70,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                               skipNextArmed: scheduler.skipNextArmed)
         }
 
+        // 退出 resting 只有 completed/unlocked/wake 三条路,每条都经此回调,故这里是撤遮罩的唯一收口。
         scheduler.onRestEnded = { [weak self] reason in
             guard let self else { return }
             if reason == .completed, self.scheduler.config.lockAfterRest {
+                // 休息自然结束且要锁屏:先停交互(让用户能输密码),黑窗保留;
+                // 锁屏后等 screenIsLocked(锁屏界面盖上)再撤黑窗,避免中途露出桌面。
+                self.overlay.detachRestInteraction()
                 ScreenLocker.lock()
+                self.pendingRestWindowRemoval = true
+                self.startLockConfirmFallback()
+            } else {
+                self.overlay.hideRest()
             }
         }
 
@@ -143,6 +158,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         object: nil, queue: .main) { [weak self] _ in
             self?.isScreenLocked = true
             self?.noteAbsenceBegan()
+            self?.finishPendingRestWindowRemoval()   // 锁屏界面已盖上 → 撤掉延迟保留的黑窗
         }
         dnc.addObserver(forName: Notification.Name("com.apple.screenIsUnlocked"),
                         object: nil, queue: .main) { [weak self] _ in
@@ -159,6 +175,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard !isAsleep, !isScreenLocked, let began = absenceBeganAt else { return }
         absenceBeganAt = nil
         scheduler.systemDidWake(sleptFor: Date().timeIntervalSince(began), now: Date())
+    }
+
+    private func startLockConfirmFallback() {
+        lockConfirmFallbackTimer?.invalidate()
+        let timer = Timer(timeInterval: Self.lockConfirmFallback, repeats: false) { [weak self] _ in
+            self?.finishPendingRestWindowRemoval()
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        lockConfirmFallbackTimer = timer
+    }
+
+    /// 撤除延迟锁屏路保留的黑窗。由 screenIsLocked 观察者(正常)或兜底计时器(降级)调用,幂等。
+    private func finishPendingRestWindowRemoval() {
+        guard pendingRestWindowRemoval else { return }
+        pendingRestWindowRemoval = false
+        lockConfirmFallbackTimer?.invalidate()
+        lockConfirmFallbackTimer = nil
+        overlay.removeRestWindows()
     }
 
     // MARK: - 单实例
