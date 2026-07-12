@@ -217,6 +217,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// 缺席期间轮询:用户是否已回到(屏幕未锁 且 显示器未睡)。
     private func userIsPresent() -> Bool {
+        if isScreensaverActive { return false }                        // 屏保运行中(屏未锁、屏未熄)→ 仍不在
         if CGDisplayIsAsleep(CGMainDisplayID()) != 0 { return false }   // 显示器在睡 → 仍不在
         if screenIsLockedNow() { return false }                        // 屏幕锁定中 → 仍不在
         return true
