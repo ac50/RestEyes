@@ -30,7 +30,7 @@ public struct Config: Equatable {
     message = 休息一下,眺望远方 🌿
     show_countdown = on    # 遮罩上是否显示剩余时间倒计时(on/off)
     lock_after_rest = on   # 休息自然结束后进入系统锁屏;手动解锁不触发(on/off)
-    wake_ends_rest = on    # 睡眠/锁屏后唤醒解锁时,直接结束休息回到工作(on/off)
+    wake_ends_rest = on    # 睡眠/锁屏/熄屏/屏保/合盖后唤醒或解锁时,直接结束休息回到工作(on/off)
     launch_at_login = on   # 开机自动启动(on/off)
     """
 
