@@ -1,4 +1,5 @@
 import AppKit
+import CoreGraphics
 import RestEyesCore
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -22,6 +23,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// 锁屏后等待锁屏界面盖上的兜底上限:超时仍未收到 screenIsLocked 就直接撤黑窗,防滞留。
     private static let lockConfirmFallback: TimeInterval = 2.5
+
+    /// 缺席结束轮询去抖:离开不足此秒数不触发轮询解冻,避免刚锁屏那一瞬会话态未落定被误判为「在场」。
+    private static let absencePollDebounce: TimeInterval = 3
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         terminateIfAlreadyRunning()
@@ -127,8 +131,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let timer = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
             guard let self else { return }
             if let began = self.absenceBeganAt {
-                if Date().timeIntervalSince(began) >= Self.absenceForceClearCeiling {
-                    self.endAbsence(awayFor: Date().timeIntervalSince(began))
+                let awayFor = Date().timeIntervalSince(began)
+                // 看门狗上限,或「离开够久 + 已在场」→ 结束缺席(后者补唤醒/解锁通知漏收)。
+                if awayFor >= Self.absenceForceClearCeiling
+                    || (awayFor >= Self.absencePollDebounce && self.userIsPresent()) {
+                    self.endAbsence(awayFor: awayFor)
                 }
                 return
             }
@@ -206,6 +213,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         isScreensaverActive = false
         absenceBeganAt = nil
         scheduler.systemDidWake(sleptFor: awayFor, now: Date())
+    }
+
+    /// 缺席期间轮询:用户是否已回到(屏幕未锁 且 显示器未睡)。
+    private func userIsPresent() -> Bool {
+        if CGDisplayIsAsleep(CGMainDisplayID()) != 0 { return false }   // 显示器在睡 → 仍不在
+        if screenIsLockedNow() { return false }                        // 屏幕锁定中 → 仍不在
+        return true
+    }
+
+    /// 读当前会话锁屏态(CGSSessionScreenIsLocked)。读不到时保守返回 false,
+    /// 由 userIsPresent 结合显示器态共同判定。
+    private func screenIsLockedNow() -> Bool {
+        guard let dict = CGSessionCopyCurrentDictionary() as? [String: Any] else { return false }
+        if let locked = dict["CGSSessionScreenIsLocked"] as? Bool { return locked }
+        if let n = dict["CGSSessionScreenIsLocked"] as? NSNumber { return n.boolValue }
+        return false
     }
 
     private func startLockConfirmFallback() {
