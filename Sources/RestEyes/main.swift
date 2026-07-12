@@ -10,6 +10,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var absenceBeganAt: Date?
     private var isAsleep = false
     private var isScreenLocked = false
+    private var isDisplayAsleep = false        // 显示器熄屏(补「纯熄屏无通知」缺口)
+    private var isScreensaverActive = false    // 屏保运行中
 
     /// 休息自然结束触发的锁屏尚未撤除黑窗时为 true(等 screenIsLocked 或兜底超时后撤)。
     private var pendingRestWindowRemoval = false
@@ -126,9 +128,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return }
             if let began = self.absenceBeganAt {
                 if Date().timeIntervalSince(began) >= Self.absenceForceClearCeiling {
-                    self.isAsleep = false
-                    self.isScreenLocked = false
-                    self.endAbsenceIfPresent()
+                    self.endAbsence(awayFor: Date().timeIntervalSince(began))
                 }
                 return
             }
@@ -153,6 +153,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.isAsleep = false
             self?.endAbsenceIfPresent()
         }
+        wnc.addObserver(forName: NSWorkspace.screensDidSleepNotification,
+                        object: nil, queue: .main) { [weak self] _ in
+            self?.isDisplayAsleep = true
+            self?.noteAbsenceBegan()
+        }
+        wnc.addObserver(forName: NSWorkspace.screensDidWakeNotification,
+                        object: nil, queue: .main) { [weak self] _ in
+            self?.isDisplayAsleep = false
+            self?.endAbsenceIfPresent()
+        }
         let dnc = DistributedNotificationCenter.default()
         dnc.addObserver(forName: Notification.Name("com.apple.screenIsLocked"),
                         object: nil, queue: .main) { [weak self] _ in
@@ -165,6 +175,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.isScreenLocked = false
             self?.endAbsenceIfPresent()
         }
+        dnc.addObserver(forName: Notification.Name("com.apple.screensaver.didstart"),
+                        object: nil, queue: .main) { [weak self] _ in
+            self?.isScreensaverActive = true
+            self?.noteAbsenceBegan()
+        }
+        dnc.addObserver(forName: Notification.Name("com.apple.screensaver.didstop"),
+                        object: nil, queue: .main) { [weak self] _ in
+            self?.isScreensaverActive = false
+            self?.endAbsenceIfPresent()
+        }
     }
 
     private func noteAbsenceBegan() {
@@ -172,9 +192,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func endAbsenceIfPresent() {
-        guard !isAsleep, !isScreenLocked, let began = absenceBeganAt else { return }
+        guard !isAsleep, !isScreenLocked, !isDisplayAsleep, !isScreensaverActive,
+              let began = absenceBeganAt else { return }
+        endAbsence(awayFor: Date().timeIntervalSince(began))
+    }
+
+    /// 强制结束缺席:复位全部缺席标记并按给定离开时长对账。
+    /// 看门狗与轮询兜底(Task 4)共用此收口。
+    private func endAbsence(awayFor: TimeInterval) {
+        isAsleep = false
+        isScreenLocked = false
+        isDisplayAsleep = false
+        isScreensaverActive = false
         absenceBeganAt = nil
-        scheduler.systemDidWake(sleptFor: Date().timeIntervalSince(began), now: Date())
+        scheduler.systemDidWake(sleptFor: awayFor, now: Date())
     }
 
     private func startLockConfirmFallback() {
