@@ -151,6 +151,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             if gap >= Self.suspendJumpThreshold {
                 // 心跳间隔异常大 = 中间被系统挂起(睡眠/合盖)却未登记缺席:按跳变时长对账。
+                // 休息相位也刻意走这条(未登记的挂起中断休息 → 交 systemDidWake 按 wake_ends_rest 处理,
+                // 才是真挂起时的正确行为);理论上 ≥5s 主线程卡顿会误判、提前结束休息,但本应用几乎
+                // 不可能卡这么久,可接受 —— 勿为此把休息相位排除掉。
                 self.scheduler.systemDidWake(sleptFor: gap, now: now)
                 return
             }
