@@ -8,8 +8,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let overlay = OverlayController()
     private let statusItem = StatusItemController()
     private var tickTimer: Timer?
+    private var lastTickAt = Date()            // 上次心跳时刻;侦测系统挂起(睡眠/合盖)造成的时钟跳变
     private var absenceBeganAt: Date?
-    private var isAsleep = false
     private var isScreenLocked = false
     private var isDisplayAsleep = false        // 显示器熄屏(补「纯熄屏无通知」缺口)
     private var isScreensaverActive = false    // 屏保运行中
@@ -27,6 +27,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 缺席结束轮询去抖:离开不足此秒数不触发轮询解冻,避免刚锁屏那一瞬会话态未落定被误判为「在场」。
     private static let absencePollDebounce: TimeInterval = 3
 
+    /// 心跳间隔远超正常 1 秒即判定中间被系统挂起(睡眠/合盖);挂起时长交给 systemDidWake 对账。
+    /// 误报(主线程偶发卡顿)只会把 deadline 顺移几秒,无害。
+    private static let suspendJumpThreshold: TimeInterval = 5
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         terminateIfAlreadyRunning()
         let config = Config.load()
@@ -34,7 +38,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         LoginItem.sync(enabled: config.launchAtLogin)
         wire()
         startTicking()
-        observeSleepAndLock()
+        observeAbsenceNotifications()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -128,38 +132,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - 心跳
 
     private func startTicking() {
+        lastTickAt = Date()
         let timer = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
             guard let self else { return }
+            let now = Date()
+            let gap = now.timeIntervalSince(self.lastTickAt)
+            self.lastTickAt = now
+
             if let began = self.absenceBeganAt {
-                let awayFor = Date().timeIntervalSince(began)
-                // 看门狗上限,或「离开够久 + 已在场」→ 结束缺席(后者补唤醒/解锁通知漏收)。
+                // 已登记缺席(醒着但人不在:锁屏/熄屏/屏保):按墙钟冻结,靠看门狗上限或
+                // 「离开够久 + 已在场」轮询结束(后者补漏收的唤醒/解锁通知)。
+                let awayFor = now.timeIntervalSince(began)
                 if awayFor >= Self.absenceForceClearCeiling
                     || (awayFor >= Self.absencePollDebounce && self.userIsPresent()) {
                     self.endAbsence(awayFor: awayFor)
                 }
                 return
             }
-            self.scheduler.tick(now: Date())
+            if gap >= Self.suspendJumpThreshold {
+                // 心跳间隔异常大 = 中间被系统挂起(睡眠/合盖)却未登记缺席:按跳变时长对账。
+                self.scheduler.systemDidWake(sleptFor: gap, now: now)
+                return
+            }
+            self.scheduler.tick(now: now)
         }
         timer.tolerance = 0.1
         RunLoop.main.add(timer, forMode: .common)   // 菜单打开(eventTracking)时也要走时
         tickTimer = timer
     }
 
-    // MARK: - 睡眠/锁屏
+    // MARK: - 缺席检测(醒着但人不在:锁屏/熄屏/屏保)
+    //         系统挂起(睡眠/合盖:CPU 关、时钟跳)由心跳的时钟跳变兜底,不在此处理。
 
-    private func observeSleepAndLock() {
+    private func observeAbsenceNotifications() {
         let wnc = NSWorkspace.shared.notificationCenter
-        wnc.addObserver(forName: NSWorkspace.willSleepNotification,
-                        object: nil, queue: .main) { [weak self] _ in
-            self?.isAsleep = true
-            self?.noteAbsenceBegan()
-        }
-        wnc.addObserver(forName: NSWorkspace.didWakeNotification,
-                        object: nil, queue: .main) { [weak self] _ in
-            self?.isAsleep = false
-            self?.endAbsenceIfPresent()
-        }
         wnc.addObserver(forName: NSWorkspace.screensDidSleepNotification,
                         object: nil, queue: .main) { [weak self] _ in
             self?.isDisplayAsleep = true
@@ -199,15 +205,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func endAbsenceIfPresent() {
-        guard !isAsleep, !isScreenLocked, !isDisplayAsleep, !isScreensaverActive,
+        guard !isScreenLocked, !isDisplayAsleep, !isScreensaverActive,
               let began = absenceBeganAt else { return }
         endAbsence(awayFor: Date().timeIntervalSince(began))
     }
 
-    /// 强制结束缺席:复位全部缺席标记并按给定离开时长对账。
-    /// 看门狗与轮询兜底(Task 4)共用此收口。
+    /// 强制结束缺席:复位全部缺席标记并按给定离开时长对账。看门狗与轮询兜底共用此收口。
     private func endAbsence(awayFor: TimeInterval) {
-        isAsleep = false
         isScreenLocked = false
         isDisplayAsleep = false
         isScreensaverActive = false
@@ -215,7 +219,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         scheduler.systemDidWake(sleptFor: awayFor, now: Date())
     }
 
-    /// 缺席期间轮询:用户是否已回到(屏幕未锁 且 显示器未睡)。
+    /// 缺席期间轮询:用户是否已回到(屏保未运行 且 显示器未睡 且 屏幕未锁)。
     private func userIsPresent() -> Bool {
         if isScreensaverActive { return false }                        // 屏保运行中(屏未锁、屏未熄)→ 仍不在
         if CGDisplayIsAsleep(CGMainDisplayID()) != 0 { return false }   // 显示器在睡 → 仍不在
@@ -223,13 +227,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return true
     }
 
-    /// 读当前会话锁屏态(CGSSessionScreenIsLocked)。读不到时保守返回 false,
+    /// 读当前会话锁屏态(CGSSessionScreenIsLocked,CFBoolean → Bool)。读不到时保守返回 false,
     /// 由 userIsPresent 结合显示器态共同判定。
     private func screenIsLockedNow() -> Bool {
         guard let dict = CGSessionCopyCurrentDictionary() as? [String: Any] else { return false }
-        if let locked = dict["CGSSessionScreenIsLocked"] as? Bool { return locked }
-        if let n = dict["CGSSessionScreenIsLocked"] as? NSNumber { return n.boolValue }
-        return false
+        return dict["CGSSessionScreenIsLocked"] as? Bool ?? false
     }
 
     private func startLockConfirmFallback() {
