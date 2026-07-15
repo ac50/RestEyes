@@ -189,4 +189,20 @@ final class ConfigTests: XCTestCase {
         XCTAssertTrue(Config.parse("launch_at_login = maybe").launchAtLogin)
         XCTAssertTrue(Config.parse("").launchAtLogin)
     }
+
+    func testLockOnUnlockDefaultsOn() {
+        XCTAssertTrue(Config().lockOnUnlock)
+    }
+
+    func testLockOnUnlockParsesOff() {
+        XCTAssertFalse(Config.parse("lock_on_unlock = off").lockOnUnlock)
+    }
+
+    func testLockOnUnlockParsesOn() {
+        XCTAssertTrue(Config.parse("lock_on_unlock = on").lockOnUnlock)
+    }
+
+    func testLockOnUnlockInvalidFallsBackToDefault() {
+        XCTAssertTrue(Config.parse("lock_on_unlock = maybe").lockOnUnlock)
+    }
 }

@@ -15,6 +15,7 @@ public struct Config: Equatable {
     public var lockAfterRest: Bool = true
     public var wakeEndsRest: Bool = true
     public var launchAtLogin: Bool = true
+    public var lockOnUnlock: Bool = true
 
     public init() {}
 
@@ -32,6 +33,7 @@ public struct Config: Equatable {
     lock_after_rest = on   # 休息自然结束后进入系统锁屏;手动解锁不触发(on/off)
     wake_ends_rest = on    # 睡眠/锁屏/熄屏/屏保/合盖后唤醒或解锁时,直接结束休息回到工作(on/off)
     launch_at_login = on   # 开机自动启动(on/off)
+    lock_on_unlock = on    # 点击「解锁」或 ESC×10 后进入系统锁屏,需输开机密码才回桌面(on/off)
     """
 
     public static var defaultURL: URL {
@@ -81,6 +83,9 @@ public struct Config: Equatable {
             case "launch_at_login":
                 if value == "on" { c.launchAtLogin = true }
                 else if value == "off" { c.launchAtLogin = false }
+            case "lock_on_unlock":
+                if value == "on" { c.lockOnUnlock = true }
+                else if value == "off" { c.lockOnUnlock = false }
             default:
                 continue
             }
