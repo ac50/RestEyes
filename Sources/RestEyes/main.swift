@@ -17,8 +17,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var pendingRestWindowRemoval = false
     private var lockConfirmFallbackTimer: Timer?
 
-    /// 锁屏后等待锁屏界面盖上的兜底上限:超时仍未收到 screenIsLocked 就直接撤黑窗,防滞留。
-    private static let lockConfirmFallback: TimeInterval = 2.5
+    /// 锁屏确认后再等这点时间(合成缓冲),让锁屏界面完全画完再撤黑窗,消除露桌面那一帧。
+    private static let lockRemovalGrace: TimeInterval = 0.4
+
+    /// 兜底硬上限:超时仍没收到 screenIsLocked 就直接撤黑窗,防滞留。
+    /// 常态走「通知 + 缓冲」快路(几百毫秒内撤),兜底几乎不触发。
+    private static let lockConfirmFallback: TimeInterval = 5
 
     /// 心跳间隔远超正常 1 秒即判定中间被系统挂起(睡眠/合盖);挂起时长交给 systemDidWake 对账。
     /// 误报(主线程偶发卡顿)只会把 deadline 顺移几秒,无害。
@@ -167,7 +171,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         object: nil, queue: .main) { [weak self] _ in
             self?.isScreenLocked = true
             self?.noteAwayBegan()
-            self?.finishPendingRestWindowRemoval()   // 锁屏界面已盖上 → 撤掉延迟保留的黑窗
+            self?.scheduleRemovalAfterGrace()   // 锁屏确认 → 等合成缓冲后撤黑窗(见下)
         }
         dnc.addObserver(forName: Notification.Name("com.apple.screenIsUnlocked"),
                         object: nil, queue: .main) { [weak self] _ in
@@ -219,6 +223,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// 兜底上限(约 5s):超时仍未收到 screenIsLocked 就直接撤黑窗,防滞留。
     private func startLockConfirmFallback() {
         lockConfirmFallbackTimer?.invalidate()
         let timer = Timer(timeInterval: Self.lockConfirmFallback, repeats: false) { [weak self] _ in
@@ -235,6 +240,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         lockConfirmFallbackTimer?.invalidate()
         lockConfirmFallbackTimer = nil
         overlay.removeRestWindows()
+    }
+
+    /// 收到 com.apple.screenIsLocked 后,等一个合成缓冲再撤黑窗:此刻锁屏界面已在黑窗之上,
+    /// 撤窗发生在其下方、不可见。非「休息结束锁屏」路(pending 为假)时安全 no-op。
+    private func scheduleRemovalAfterGrace() {
+        guard pendingRestWindowRemoval else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.lockRemovalGrace) { [weak self] in
+            self?.finishPendingRestWindowRemoval()
+        }
     }
 
     // MARK: - 单实例
