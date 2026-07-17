@@ -88,11 +88,12 @@ public final class BreakScheduler {
     }
 
     public func reload(config: Config, now: Date) {
+        let previous = self.config
         self.config = config
-        if phase == .working || phase == .warning {
-            startWork(now: now)
+        if phase == .working, config.workMinutes != previous.workMinutes {
+            startWork(now: now)          // 只在工作时长真的变了时才按新时长重开
         }
-        // resting/paused:新配置自下个周期生效,当前 deadline 不动
+        // warning/resting/paused:当前 deadline 不动,新配置自下个周期生效
     }
 
     public func systemDidWake(sleptFor: TimeInterval, now: Date) {
