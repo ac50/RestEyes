@@ -408,4 +408,146 @@ final class BreakSchedulerTests: XCTestCase {
         XCTAssertFalse(s.pause(now: after(30)))
         XCTAssertEqual(s.consecutiveSkips, 1)
     }
+
+    // 休息自然走完 → 清零
+    func testCompletedRestResetsCount() {
+        let (s, _, _) = makeScheduler(makeConfig())
+        XCTAssertTrue(s.pause(now: after(10)))
+        s.resume(now: after(20))
+        XCTAssertEqual(s.consecutiveSkips, 1)
+        s.breakNow(now: after(30))
+        s.tick(now: after(90))                          // 休息 60 秒走完
+        XCTAssertEqual(s.phase, .working)
+        XCTAssertEqual(s.consecutiveSkips, 0)
+    }
+
+    // unlock 未到点 + require_full_rest = on → +1
+    func testUnlockEarlyCountsWhenFullRestRequired() {
+        let (s, _, _) = makeScheduler(makeConfig())
+        s.breakNow(now: t0)
+        s.unlock(now: after(20))                        // rest = 60s,未到点
+        XCTAssertEqual(s.consecutiveSkips, 1)
+    }
+
+    // unlock 未到点 + require_full_rest = off → 清零
+    func testUnlockEarlyResetsWhenFullRestNotRequired() {
+        let (s, _, _) = makeScheduler(makeConfig(requireFullRest: false))
+        XCTAssertTrue(s.pause(now: after(10)))
+        s.resume(now: after(20))
+        s.breakNow(now: after(30))
+        s.unlock(now: after(40))
+        XCTAssertEqual(s.consecutiveSkips, 0)
+    }
+
+    // unlock 在 deadline 之后调用(「已到点但本秒 tick 还没跑」的窗口)→ 清零
+    func testUnlockAfterDeadlineResets() {
+        let (s, _, _) = makeScheduler(makeConfig())
+        XCTAssertTrue(s.pause(now: after(10)))
+        s.resume(now: after(20))
+        XCTAssertEqual(s.consecutiveSkips, 1)
+        s.breakNow(now: after(30))                      // 休息 60 秒 → deadline = 90
+        s.unlock(now: after(91))
+        XCTAssertEqual(s.consecutiveSkips, 0)
+    }
+
+    // systemDidWake:休息已到点 → 清零
+    func testWakePastRestDeadlineResets() {
+        let (s, _, _) = makeScheduler(makeConfig())
+        XCTAssertTrue(s.pause(now: after(10)))
+        s.resume(now: after(20))
+        s.breakNow(now: after(30))                      // deadline = 90
+        s.systemDidWake(sleptFor: 5, now: after(95))
+        XCTAssertEqual(s.consecutiveSkips, 0)
+    }
+
+    // systemDidWake:休息未到点 + 短离开 + require_full_rest = on → +1
+    // 这是「休息一开始就合盖 6 秒」那条零成本逃避路径,决策 9 要堵的正是它。
+    func testShortWakeDuringRestCountsAsEscape() {
+        let (s, _, _) = makeScheduler(makeConfig())
+        s.breakNow(now: t0)
+        s.systemDidWake(sleptFor: 6, now: after(6))     // rest = 60s 未到点
+        XCTAssertEqual(s.phase, .working)
+        XCTAssertEqual(s.consecutiveSkips, 1)
+    }
+
+    // systemDidWake:休息未到点但离开 >= rest_minutes → 清零
+    // 离开可以早于休息开始(离开期间计时不冻结),故会出现「离开很久但休息刚开始」——不该被罚。
+    func testLongAwayDuringRestResetsEvenBeforeDeadline() {
+        let (s, _, _) = makeScheduler(makeConfig())
+        XCTAssertTrue(s.pause(now: after(10)))
+        s.resume(now: after(20))
+        XCTAssertEqual(s.consecutiveSkips, 1)
+        s.breakNow(now: after(30))                      // deadline = 90
+        s.systemDidWake(sleptFor: 70, now: after(80))   // 离开 70s >= rest 60s,但 now < deadline
+        XCTAssertEqual(s.phase, .working)
+        XCTAssertEqual(s.consecutiveSkips, 0)
+    }
+
+    // systemDidWake:休息未到点 + wake_ends_rest = off → 休息继续,计数既不清零也不 +1
+    func testWakeWithWakeEndsRestOffLeavesCountUntouched() {
+        var c = makeConfig()
+        c.wakeEndsRest = false
+        let (s, _, _) = makeScheduler(c)
+        s.breakNow(now: t0)
+        s.systemDidWake(sleptFor: 6, now: after(6))
+        XCTAssertEqual(s.phase, .resting)
+        XCTAssertEqual(s.consecutiveSkips, 0)
+    }
+
+    // 连掐 max 次不完整休息后 pause 被拒 —— 钉死决策 9 真的堵住了那条路
+    func testRepeatedShortWakesExhaustBudget() {
+        let (s, _, _) = makeScheduler(makeConfig(maxSkips: 2))
+        s.breakNow(now: t0)
+        s.systemDidWake(sleptFor: 6, now: after(6))     // +1
+        s.breakNow(now: after(10))
+        s.systemDidWake(sleptFor: 6, now: after(16))    // +1
+        XCTAssertEqual(s.consecutiveSkips, 2)
+        XCTAssertFalse(s.pause(now: after(20)))
+    }
+
+    // 工作中长睡 >= rest_minutes → 清零
+    func testLongSleepInWorkingResets() {
+        let (s, _, _) = makeScheduler(makeConfig())
+        XCTAssertTrue(s.pause(now: after(10)))
+        s.resume(now: after(20))
+        XCTAssertEqual(s.consecutiveSkips, 1)
+        s.systemDidWake(sleptFor: 60, now: after(80))   // rest = 60s
+        XCTAssertEqual(s.consecutiveSkips, 0)
+    }
+
+    // 工作中短睡 → 不清零、不消耗 armed skip
+    func testShortSleepInWorkingKeepsCountAndArm() {
+        let (s, _, _) = makeScheduler(makeConfig())
+        XCTAssertTrue(s.pause(now: after(10)))
+        s.resume(now: after(20))
+        s.toggleSkipNext()
+        s.systemDidWake(sleptFor: 10, now: after(30))
+        XCTAssertEqual(s.consecutiveSkips, 1)
+        XCTAssertTrue(s.skipNextArmed)
+    }
+
+    // .paused 相位长睡 → 清零,且暂停 deadline 不变(清零提到 switch 之前才成立)
+    func testLongSleepWhilePausedResetsButKeepsPause() {
+        let (s, _, _) = makeScheduler(makeConfig(maxSkips: 2))
+        XCTAssertTrue(s.pause(now: after(10)))
+        s.resume(now: after(20))
+        XCTAssertTrue(s.pause(now: after(30)))          // 计数 = 2,已满;暂停至 3630
+        XCTAssertEqual(s.consecutiveSkips, 2)
+        s.systemDidWake(sleptFor: 60, now: after(90))
+        XCTAssertEqual(s.consecutiveSkips, 0)
+        XCTAssertEqual(s.phase, .paused)                // 暂停未被打断、不补偿
+        s.tick(now: after(3629))
+        XCTAssertEqual(s.phase, .paused)
+        s.tick(now: after(3630))
+        XCTAssertEqual(s.phase, .working)
+    }
+
+    // .paused 相位短睡 → 不清零
+    func testShortSleepWhilePausedKeepsCount() {
+        let (s, _, _) = makeScheduler(makeConfig())
+        XCTAssertTrue(s.pause(now: after(10)))
+        s.systemDidWake(sleptFor: 10, now: after(20))
+        XCTAssertEqual(s.consecutiveSkips, 1)
+        XCTAssertEqual(s.phase, .paused)
+    }
 }
