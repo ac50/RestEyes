@@ -96,9 +96,11 @@ public final class BreakScheduler {
     }
 
     public func systemDidWake(sleptFor: TimeInterval, now: Date) {
-        // 睡/离开够一次休息时长 = 视为已休息,任何相位一律清零(含 .paused;
-        // 必须在 switch 之前,否则暂停中合盖过夜回来计数仍是满的)。
-        if sleptFor >= config.restMinutes * 60 { consecutiveSkips = 0 }
+        // 睡/离开够一次休息时长 = 视为已休息。
+        let sleptEnoughForFullRest = sleptFor >= config.restMinutes * 60
+
+        // 任何相位一律清零(含 .paused;必须在 switch 之前,否则暂停中合盖过夜回来计数仍是满的)。
+        if sleptEnoughForFullRest { consecutiveSkips = 0 }
 
         switch phase {
         case .resting:
@@ -107,11 +109,11 @@ public final class BreakScheduler {
             } else if config.wakeEndsRest {
                 // 未到点被掐断:离开/睡眠够一次休息时长也算休息过了,否则记一次逃避。
                 // 离开可早于休息开始(离开期间计时不冻结),故 now < deadline 不等于「没休息够」。
-                endRest(now: now, reason: .wake, restWasFull: sleptFor >= config.restMinutes * 60)
+                endRest(now: now, reason: .wake, restWasFull: sleptEnoughForFullRest)
             }
             // 未到点且 wake_ends_rest = off:遮罩继续,按墙钟走
         case .working, .warning:
-            if sleptFor >= config.restMinutes * 60 {
+            if sleptEnoughForFullRest {
                 startWork(now: now)                              // 睡够了,视为已休息
             } else {
                 deadline = deadline.addingTimeInterval(sleptFor) // 睡眠期间计时暂停
