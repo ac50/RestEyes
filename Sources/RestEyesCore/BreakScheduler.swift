@@ -26,6 +26,9 @@ public final class BreakScheduler {
     public private(set) var skipNextArmed = false
     public private(set) var config: Config
 
+    /// 连续暂停/跳过次数;每次真的休息完归零。达 max_consecutive_skips 后暂停与跳过均被拒绝。
+    public private(set) var consecutiveSkips = 0
+
     public static let pauseDuration: TimeInterval = 3600
 
     private var deadline: Date          // 当前相位结束时刻
@@ -73,9 +76,13 @@ public final class BreakScheduler {
         skipNextArmed.toggle()
     }
 
-    public func pause(now: Date) {
-        guard phase == .working || phase == .warning else { return }
+    @discardableResult
+    public func pause(now: Date) -> Bool {
+        guard phase == .working || phase == .warning else { return false }
+        guard !skipsExhausted else { return false }
+        consecutiveSkips += 1
         transition(to: .paused, deadline: now.addingTimeInterval(Self.pauseDuration))
+        return true
     }
 
     public func resume(now: Date) {
@@ -127,6 +134,11 @@ public final class BreakScheduler {
     }
 
     // MARK: - 私有
+
+    /// 0 = 不限。
+    private var skipsExhausted: Bool {
+        config.maxConsecutiveSkips > 0 && consecutiveSkips >= config.maxConsecutiveSkips
+    }
 
     private func startWork(now: Date) {
         restStartedAt = nil
