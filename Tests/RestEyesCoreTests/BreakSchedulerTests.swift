@@ -639,4 +639,36 @@ final class BreakSchedulerTests: XCTestCase {
         XCTAssertEqual(s.consecutiveSkips, 2)
         XCTAssertFalse(s.pause(now: after(90)))
     }
+
+    // reload 只改 message → deadline 不变(堵「预警中点重新加载配置 = 免费跳过」)
+    func testReloadWithoutDurationChangeKeepsDeadline() {
+        let (s, _, _) = makeScheduler(makeConfig(work: 1))
+        var c = makeConfig(work: 1)
+        c.message = "新文案"
+        s.reload(config: c, now: after(30))
+        XCTAssertEqual(s.config.message, "新文案")
+        s.tick(now: after(60))
+        XCTAssertEqual(s.phase, .warning)               // 原 deadline 未被重置
+    }
+
+    // .warning 中 reload → 相位仍是 warning,预警到点照常进 resting
+    func testReloadDuringWarningKeepsWarning() {
+        let (s, _, _) = makeScheduler(makeConfig())
+        s.tick(now: after(60))
+        XCTAssertEqual(s.phase, .warning)
+        var c = makeConfig(work: 5)
+        c.message = "改了"
+        s.reload(config: c, now: after(65))
+        XCTAssertEqual(s.phase, .warning)               // 不被取消
+        s.tick(now: after(70))
+        XCTAssertEqual(s.phase, .resting)               // 预警走完照常休息
+    }
+
+    // reload 不清零计数
+    func testReloadKeepsCount() {
+        let (s, _, _) = makeScheduler(makeConfig())
+        XCTAssertTrue(s.pause(now: after(10)))
+        s.reload(config: makeConfig(work: 2), now: after(20))
+        XCTAssertEqual(s.consecutiveSkips, 1)
+    }
 }
