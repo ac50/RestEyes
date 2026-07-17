@@ -45,15 +45,7 @@ public final class BreakScheduler {
         if now >= deadline {
             switch phase {
             case .working, .warning:
-                if phase == .working, config.warnSeconds > 0, !skipNextArmed {
-                    transition(to: .warning,
-                               deadline: now.addingTimeInterval(TimeInterval(config.warnSeconds)))
-                } else if skipNextArmed {
-                    skipNextArmed = false
-                    startWork(now: now)
-                } else {
-                    startRest(now: now)
-                }
+                advancePastWorkDeadline(now: now)
             case .resting:
                 endRest(now: now, reason: .completed, restWasFull: true)
             case .paused:
@@ -156,6 +148,24 @@ public final class BreakScheduler {
         }
         startWork(now: now)
         onRestEnded?(reason)
+    }
+
+    /// 工作/预警到点:决定走「跳过」「预警」还是「休息」。
+    /// 跳过只在 armed 且未达上限时生效并 +1;达上限则作废勾选、落回正常路径(该给的预警照给)。
+    private func advancePastWorkDeadline(now: Date) {
+        if skipNextArmed {
+            skipNextArmed = false
+            if !skipsExhausted {
+                consecutiveSkips += 1
+                startWork(now: now)
+                return
+            }
+        }
+        if phase == .working, config.warnSeconds > 0 {
+            transition(to: .warning, deadline: now.addingTimeInterval(TimeInterval(config.warnSeconds)))
+        } else {
+            startRest(now: now)
+        }
     }
 
     private func startWork(now: Date) {
