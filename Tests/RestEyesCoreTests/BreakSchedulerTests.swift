@@ -671,4 +671,14 @@ final class BreakSchedulerTests: XCTestCase {
         s.reload(config: makeConfig(work: 2), now: after(20))
         XCTAssertEqual(s.consecutiveSkips, 1)
     }
+
+    // TickInfo 上报禁用状态
+    func testTickInfoReportsSkipsExhausted() {
+        let (s, _, infos) = makeScheduler(makeConfig(maxSkips: 1))
+        s.tick(now: after(1))
+        XCTAssertFalse(infos().last!.skipsExhausted)
+        XCTAssertTrue(s.pause(now: after(2)))
+        s.tick(now: after(3))
+        XCTAssertTrue(infos().last!.skipsExhausted)
+    }
 }
