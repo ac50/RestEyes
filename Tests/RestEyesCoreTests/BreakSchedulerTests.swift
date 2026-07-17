@@ -7,12 +7,15 @@ final class BreakSchedulerTests: XCTestCase {
     private func after(_ s: TimeInterval) -> Date { t0.addingTimeInterval(s) }
 
     private func makeConfig(work: Double = 1, rest: Double = 1, warn: Int = 10,
-                            unlock: UnlockAfter = .seconds(60)) -> Config {
+                            unlock: UnlockAfter = .seconds(60),
+                            maxSkips: Int = 2, requireFullRest: Bool = true) -> Config {
         var c = Config()
         c.workMinutes = work      // 1 分钟 = 60 秒,便于推算
         c.restMinutes = rest
         c.warnSeconds = warn
         c.unlockAfter = unlock
+        c.maxConsecutiveSkips = maxSkips
+        c.requireFullRest = requireFullRest
         return c
     }
 
@@ -347,5 +350,62 @@ final class BreakSchedulerTests: XCTestCase {
         XCTAssertEqual(reasons, [.wake])
         s.tick(now: after(11))
         XCTAssertEqual(infos().last!.remaining, 59, accuracy: 0.001)  // 新工作周期从解锁起算
+    }
+
+    // pause 成功:返回 true 且记 1 次
+    func testPauseCountsOnce() {
+        let (s, _, _) = makeScheduler(makeConfig())
+        XCTAssertTrue(s.pause(now: after(10)))
+        XCTAssertEqual(s.consecutiveSkips, 1)
+    }
+
+    // 达上限:pause 返回 false,相位不变、计数不变
+    func testPauseRejectedWhenExhausted() {
+        let (s, _, _) = makeScheduler(makeConfig(maxSkips: 2))
+        XCTAssertTrue(s.pause(now: after(10)))
+        s.resume(now: after(20))
+        XCTAssertTrue(s.pause(now: after(30)))
+        s.resume(now: after(40))
+        XCTAssertEqual(s.consecutiveSkips, 2)
+        XCTAssertFalse(s.pause(now: after(50)))
+        XCTAssertEqual(s.phase, .working)
+        XCTAssertEqual(s.consecutiveSkips, 2)
+    }
+
+    // 相位守卫在计数之前:resting 中 pause 被拒且不计数
+    // (warning → resting 恰在点击瞬间切换的竞态下,不得记下一次根本没发生的暂停)
+    func testPauseInRestingDoesNotCount() {
+        let (s, _, _) = makeScheduler(makeConfig())
+        s.breakNow(now: t0)
+        XCTAssertFalse(s.pause(now: after(10)))
+        XCTAssertEqual(s.phase, .resting)
+        XCTAssertEqual(s.consecutiveSkips, 0)
+    }
+
+    // 提前恢复不退还
+    func testResumeDoesNotRefund() {
+        let (s, _, _) = makeScheduler(makeConfig())
+        XCTAssertTrue(s.pause(now: after(10)))
+        s.resume(now: after(100))
+        XCTAssertEqual(s.consecutiveSkips, 1)
+    }
+
+    // max_consecutive_skips = 0 → 不限
+    func testMaxZeroNeverRejects() {
+        let (s, _, _) = makeScheduler(makeConfig(maxSkips: 0))
+        for i in 0..<10 {
+            XCTAssertTrue(s.pause(now: after(TimeInterval(i * 10))))
+            s.resume(now: after(TimeInterval(i * 10 + 5)))
+        }
+        XCTAssertEqual(s.consecutiveSkips, 10)
+    }
+
+    // max_consecutive_skips = 1 → 不允许连续:第二次即被拒
+    func testMaxOneRejectsSecond() {
+        let (s, _, _) = makeScheduler(makeConfig(maxSkips: 1))
+        XCTAssertTrue(s.pause(now: after(10)))
+        s.resume(now: after(20))
+        XCTAssertFalse(s.pause(now: after(30)))
+        XCTAssertEqual(s.consecutiveSkips, 1)
     }
 }
