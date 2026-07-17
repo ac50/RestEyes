@@ -488,10 +488,12 @@ final class BreakSchedulerTests: XCTestCase {
         var c = makeConfig()
         c.wakeEndsRest = false
         let (s, _, _) = makeScheduler(c)
-        s.breakNow(now: t0)
-        s.systemDidWake(sleptFor: 6, now: after(6))
+        XCTAssertTrue(s.pause(now: after(10)))   // count = 1
+        s.resume(now: after(20))
+        s.breakNow(now: after(30))               // rest deadline = 90
+        s.systemDidWake(sleptFor: 6, now: after(36))
         XCTAssertEqual(s.phase, .resting)
-        XCTAssertEqual(s.consecutiveSkips, 0)
+        XCTAssertEqual(s.consecutiveSkips, 1)    // 不清零、不 +1
     }
 
     // 连掐 max 次不完整休息后 pause 被拒 —— 钉死决策 9 真的堵住了那条路

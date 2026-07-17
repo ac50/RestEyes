@@ -37,7 +37,7 @@ public struct Config: Equatable {
     launch_at_login = on   # 开机自动启动(on/off)
     lock_on_unlock = on    # 点击「解锁」或 ESC×10 后进入系统锁屏,需输开机密码才回桌面(on/off)
     max_consecutive_skips = 2   # 连续暂停/跳过几次后必须先完成一次休息;1 = 不允许连续;0 = 不限
-    require_full_rest = on      # 必须完整休息完才清零连续计数;off = 中途点「解锁」也算(on/off)
+    require_full_rest = on      # 必须完整休息完才清零连续计数;off = 中途点「解锁」或被唤醒掐断也算(on/off)
     """
 
     public static var defaultURL: URL {
