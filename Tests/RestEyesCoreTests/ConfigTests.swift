@@ -205,4 +205,56 @@ final class ConfigTests: XCTestCase {
     func testLockOnUnlockInvalidFallsBackToDefault() {
         XCTAssertTrue(Config.parse("lock_on_unlock = maybe").lockOnUnlock)
     }
+
+    // 连续限制:默认值
+    func testConsecutiveSkipDefaults() {
+        XCTAssertEqual(Config().maxConsecutiveSkips, 2)
+        XCTAssertTrue(Config().requireFullRest)
+    }
+
+    // max_consecutive_skips 解析
+    func testMaxConsecutiveSkipsParsing() {
+        XCTAssertEqual(Config.parse("max_consecutive_skips = 5").maxConsecutiveSkips, 5)
+        XCTAssertEqual(Config.parse("max_consecutive_skips = 1").maxConsecutiveSkips, 1)
+    }
+
+    // 0 = 不限。必须经 parse 验证:README 把 `= 0` 作为老用户恢复旧行为的唯一出口,
+    // 若校验范围误写成 (1...100),0 会被当非法值回退成 2,出口失效而无人发现。
+    func testMaxConsecutiveSkipsZeroParses() {
+        XCTAssertEqual(Config.parse("max_consecutive_skips = 0").maxConsecutiveSkips, 0)
+    }
+
+    // 非法/越界回退默认
+    func testMaxConsecutiveSkipsInvalidFallsBackToDefault() {
+        XCTAssertEqual(Config.parse("max_consecutive_skips = abc").maxConsecutiveSkips, 2)
+        XCTAssertEqual(Config.parse("max_consecutive_skips = -1").maxConsecutiveSkips, 2)
+        XCTAssertEqual(Config.parse("max_consecutive_skips = 101").maxConsecutiveSkips, 2)
+    }
+
+    // 边界值本身合法
+    func testMaxConsecutiveSkipsBoundaryAccepted() {
+        XCTAssertEqual(Config.parse("max_consecutive_skips = 100").maxConsecutiveSkips, 100)
+    }
+
+    // require_full_rest 解析:on/off/非法值回退
+    func testRequireFullRestParsing() {
+        XCTAssertFalse(Config.parse("require_full_rest = off").requireFullRest)
+        XCTAssertTrue(Config.parse("require_full_rest = on").requireFullRest)
+        XCTAssertTrue(Config.parse("require_full_rest = maybe").requireFullRest)
+        XCTAssertTrue(Config.parse("").requireFullRest)
+    }
+
+    // defaultFileContent 里两个新键的键名真的能被 parse 认出。
+    // 不能依赖 testDefaultFileContentRoundTrips:新键的文件值(2 / on)恰好等于 Swift 侧默认值,
+    // 故漏加行、文件里键名拼错、或 parse 的 case 标签拼错(命中 default: continue),它统统照样绿。
+    // 也不能用 defaultFileContent.contains("max_consecutive_skips"):那根本不调 parser。
+    // 把文件里的值换成非默认值再 parse,两侧键名任一拼错都会让断言失败。
+    func testDefaultFileContentDeclaresNewKeys() {
+        let text = Config.defaultFileContent
+            .replacingOccurrences(of: "max_consecutive_skips = 2", with: "max_consecutive_skips = 7")
+            .replacingOccurrences(of: "require_full_rest = on", with: "require_full_rest = off")
+        let c = Config.parse(text)
+        XCTAssertEqual(c.maxConsecutiveSkips, 7)   // 文件里键名拼错 → 替换不命中 → 仍为 2 → 失败
+        XCTAssertFalse(c.requireFullRest)          // parse 的 case 拼错 → 取不到 off → 仍为 true → 失败
+    }
 }
