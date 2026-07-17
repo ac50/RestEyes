@@ -550,4 +550,93 @@ final class BreakSchedulerTests: XCTestCase {
         XCTAssertEqual(s.consecutiveSkips, 1)
         XCTAssertEqual(s.phase, .paused)
     }
+
+    // working 中 armed + 未满 → 跳过生效,+1
+    func testSkipInWorkingCounts() {
+        let (s, _, _) = makeScheduler(makeConfig())
+        s.toggleSkipNext()
+        s.tick(now: after(60))
+        XCTAssertEqual(s.phase, .working)
+        XCTAssertFalse(s.skipNextArmed)
+        XCTAssertEqual(s.consecutiveSkips, 1)
+    }
+
+    // warning 中 armed + 未满 → 跳过生效,+1(镜像 testSkipNextDuringWarning)
+    func testSkipInWarningCounts() {
+        let (s, _, _) = makeScheduler(makeConfig())
+        s.tick(now: after(60))
+        XCTAssertEqual(s.phase, .warning)
+        s.toggleSkipNext()
+        s.tick(now: after(70))
+        XCTAssertEqual(s.phase, .working)
+        XCTAssertEqual(s.consecutiveSkips, 1)
+    }
+
+    // working 中 armed + 已满 → 作废勾选、照走预警、不计数
+    // 落回正常路径而非直接 startRest:armed 时原逻辑绕过预警,拒绝后直接休息会让用户毫无预警地黑屏。
+    func testSkipRefusedWhenExhaustedFallsBackToWarning() {
+        let (s, _, _) = makeScheduler(makeConfig(maxSkips: 1))
+        XCTAssertTrue(s.pause(now: after(10)))          // 计数 = 1,已满
+        s.resume(now: after(20))                        // 工作至 80
+        s.toggleSkipNext()
+        s.tick(now: after(80))
+        XCTAssertEqual(s.phase, .warning)               // 该给的预警照给
+        XCTAssertFalse(s.skipNextArmed)                 // 勾选被作废
+        XCTAssertEqual(s.consecutiveSkips, 1)           // 不计数
+        s.tick(now: after(90))
+        XCTAssertEqual(s.phase, .resting)               // 预警走完照常休息
+    }
+
+    // warning 中 armed + 已满 → 作废勾选、直接休息、不计数
+    func testSkipRefusedInWarningGoesToRest() {
+        let (s, _, _) = makeScheduler(makeConfig(maxSkips: 1))
+        XCTAssertTrue(s.pause(now: after(10)))
+        s.resume(now: after(20))
+        s.tick(now: after(80))
+        XCTAssertEqual(s.phase, .warning)
+        s.toggleSkipNext()
+        s.tick(now: after(90))
+        XCTAssertEqual(s.phase, .resting)
+        XCTAssertFalse(s.skipNextArmed)
+        XCTAssertEqual(s.consecutiveSkips, 1)
+    }
+
+    // warn_seconds = 0 + armed + 已满 → 直接休息、不计数
+    func testSkipRefusedWithZeroWarnGoesToRest() {
+        let (s, _, _) = makeScheduler(makeConfig(warn: 0, maxSkips: 1))
+        XCTAssertTrue(s.pause(now: after(10)))
+        s.resume(now: after(20))
+        s.toggleSkipNext()
+        s.tick(now: after(80))
+        XCTAssertEqual(s.phase, .resting)
+        XCTAssertEqual(s.consecutiveSkips, 1)
+    }
+
+    // breakNow 清 armed 是丢弃不是消耗 → 不计数
+    func testBreakNowDiscardsArmWithoutCounting() {
+        let (s, _, _) = makeScheduler(makeConfig())
+        s.toggleSkipNext()
+        s.breakNow(now: after(10))
+        XCTAssertEqual(s.phase, .resting)
+        XCTAssertFalse(s.skipNextArmed)
+        XCTAssertEqual(s.consecutiveSkips, 0)
+    }
+
+    // 反复切换开关不烧计数
+    func testTogglingSkipDoesNotCount() {
+        let (s, _, _) = makeScheduler(makeConfig())
+        for _ in 0..<5 { s.toggleSkipNext(); s.toggleSkipNext() }
+        XCTAssertEqual(s.consecutiveSkips, 0)
+    }
+
+    // 共用计数池:pause 1 次 + 跳过 1 次 = 2,max = 2 时第三次被拒
+    func testPauseAndSkipShareTheSameBudget() {
+        let (s, _, _) = makeScheduler(makeConfig(maxSkips: 2))
+        XCTAssertTrue(s.pause(now: after(10)))          // 1
+        s.resume(now: after(20))
+        s.toggleSkipNext()
+        s.tick(now: after(80))                          // 跳过生效 → 2
+        XCTAssertEqual(s.consecutiveSkips, 2)
+        XCTAssertFalse(s.pause(now: after(90)))
+    }
 }
