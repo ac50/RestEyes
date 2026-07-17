@@ -55,8 +55,7 @@ public final class BreakScheduler {
                     startRest(now: now)
                 }
             case .resting:
-                startWork(now: now)
-                onRestEnded?(.completed)
+                endRest(now: now, reason: .completed, restWasFull: true)
             case .paused:
                 startWork(now: now)
             }
@@ -92,8 +91,8 @@ public final class BreakScheduler {
 
     public func unlock(now: Date) {
         guard phase == .resting else { return }
-        startWork(now: now)
-        onRestEnded?(.unlocked)
+        // now >= deadline 只在「已到点但本秒 tick 还没跑」的 ~1 秒窗口内为真,此时休息其实已走完。
+        endRest(now: now, reason: .unlocked, restWasFull: now >= deadline)
     }
 
     public func reload(config: Config, now: Date) {
@@ -105,11 +104,18 @@ public final class BreakScheduler {
     }
 
     public func systemDidWake(sleptFor: TimeInterval, now: Date) {
+        // 睡/离开够一次休息时长 = 视为已休息,任何相位一律清零(含 .paused;
+        // 必须在 switch 之前,否则暂停中合盖过夜回来计数仍是满的)。
+        if sleptFor >= config.restMinutes * 60 { consecutiveSkips = 0 }
+
         switch phase {
         case .resting:
-            if now >= deadline || config.wakeEndsRest {
-                startWork(now: now)
-                onRestEnded?(.wake)
+            if now >= deadline {
+                endRest(now: now, reason: .wake, restWasFull: true)
+            } else if config.wakeEndsRest {
+                // 未到点被掐断:离开/睡眠够一次休息时长也算休息过了,否则记一次逃避。
+                // 离开可早于休息开始(离开期间计时不冻结),故 now < deadline 不等于「没休息够」。
+                endRest(now: now, reason: .wake, restWasFull: sleptFor >= config.restMinutes * 60)
             }
             // 未到点且 wake_ends_rest = off:遮罩继续,按墙钟走
         case .working, .warning:
@@ -138,6 +144,18 @@ public final class BreakScheduler {
     /// 0 = 不限。
     private var skipsExhausted: Bool {
         config.maxConsecutiveSkips > 0 && consecutiveSkips >= config.maxConsecutiveSkips
+    }
+
+    /// 结束休息:跑满了就清零连续计数;没跑满则算一次逃避 +1(require_full_rest = off 时一律清零)。
+    /// startWork 在前、onRestEnded 在后,维持既有回调顺序(见 testRestEndReasonFiresAfterPhaseChange)。
+    private func endRest(now: Date, reason: RestEndReason, restWasFull: Bool) {
+        if restWasFull || !config.requireFullRest {
+            consecutiveSkips = 0
+        } else {
+            consecutiveSkips += 1        // 没跑满 = 一次逃避,占额度
+        }
+        startWork(now: now)
+        onRestEnded?(reason)
     }
 
     private func startWork(now: Date) {
