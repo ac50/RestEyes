@@ -74,7 +74,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 break
             }
             statusItem.update(phase: info.phase, remaining: info.remaining,
-                              skipNextArmed: scheduler.skipNextArmed)
+                              skipNextArmed: scheduler.skipNextArmed,
+                              skipsExhausted: info.skipsExhausted)
         }
 
         // 退出 resting 只有 completed/unlocked/wake 三条路,都经此回调。
@@ -219,7 +220,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             // < rest_minutes:什么都不做(计时器本就照常走着)
         case .paused:
-            break
+            // 仅为「离开够久 → 清零连续计数」;systemDidWake 的 .paused 分支不动暂停 deadline。
+            scheduler.systemDidWake(sleptFor: awayFor, now: now)
         }
     }
 

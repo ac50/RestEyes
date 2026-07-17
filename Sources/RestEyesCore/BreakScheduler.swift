@@ -8,6 +8,7 @@ public struct TickInfo: Equatable {
     public var phase: Phase
     public var remaining: TimeInterval
     public var unlockVisible: Bool
+    public var skipsExhausted: Bool      // true = 已达连续上限,暂停与跳过均不可用
 }
 
 public enum RestEndReason: Equatable {
@@ -192,6 +193,7 @@ public final class BreakScheduler {
     private func tickInfo(now: Date) -> TickInfo {
         TickInfo(phase: phase,
                  remaining: max(0, deadline.timeIntervalSince(now)),
-                 unlockVisible: unlockVisible(now: now))
+                 unlockVisible: unlockVisible(now: now),
+                 skipsExhausted: skipsExhausted)
     }
 }
