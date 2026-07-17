@@ -8,6 +8,7 @@ public struct TickInfo: Equatable {
     public var phase: Phase
     public var remaining: TimeInterval
     public var unlockVisible: Bool
+    public var skipsExhausted: Bool      // true = 已达连续上限,暂停与跳过均不可用
 }
 
 public enum RestEndReason: Equatable {
@@ -26,6 +27,9 @@ public final class BreakScheduler {
     public private(set) var skipNextArmed = false
     public private(set) var config: Config
 
+    /// 连续暂停/跳过次数;每次真的休息完归零。达 max_consecutive_skips 后暂停与跳过均被拒绝。
+    public private(set) var consecutiveSkips = 0
+
     public static let pauseDuration: TimeInterval = 3600
 
     private var deadline: Date          // 当前相位结束时刻
@@ -42,18 +46,9 @@ public final class BreakScheduler {
         if now >= deadline {
             switch phase {
             case .working, .warning:
-                if phase == .working, config.warnSeconds > 0, !skipNextArmed {
-                    transition(to: .warning,
-                               deadline: now.addingTimeInterval(TimeInterval(config.warnSeconds)))
-                } else if skipNextArmed {
-                    skipNextArmed = false
-                    startWork(now: now)
-                } else {
-                    startRest(now: now)
-                }
+                advancePastWorkDeadline(now: now)
             case .resting:
-                startWork(now: now)
-                onRestEnded?(.completed)
+                endRest(now: now, reason: .completed, restWasFull: true)
             case .paused:
                 startWork(now: now)
             }
@@ -73,9 +68,13 @@ public final class BreakScheduler {
         skipNextArmed.toggle()
     }
 
-    public func pause(now: Date) {
-        guard phase == .working || phase == .warning else { return }
+    @discardableResult
+    public func pause(now: Date) -> Bool {
+        guard phase == .working || phase == .warning else { return false }
+        guard !skipsExhausted else { return false }
+        consecutiveSkips += 1
         transition(to: .paused, deadline: now.addingTimeInterval(Self.pauseDuration))
+        return true
     }
 
     public func resume(now: Date) {
@@ -85,28 +84,38 @@ public final class BreakScheduler {
 
     public func unlock(now: Date) {
         guard phase == .resting else { return }
-        startWork(now: now)
-        onRestEnded?(.unlocked)
+        // now >= deadline 只在「已到点但本秒 tick 还没跑」的 ~1 秒窗口内为真,此时休息其实已走完。
+        endRest(now: now, reason: .unlocked, restWasFull: now >= deadline)
     }
 
     public func reload(config: Config, now: Date) {
+        let previous = self.config
         self.config = config
-        if phase == .working || phase == .warning {
-            startWork(now: now)
+        if phase == .working, config.workMinutes != previous.workMinutes {
+            startWork(now: now)          // 只在工作时长真的变了时才按新时长重开
         }
-        // resting/paused:新配置自下个周期生效,当前 deadline 不动
+        // warning/resting/paused:当前 deadline 不动,新配置自下个周期生效
     }
 
     public func systemDidWake(sleptFor: TimeInterval, now: Date) {
+        // 睡/离开够一次休息时长 = 视为已休息。
+        let sleptEnoughForFullRest = sleptFor >= config.restMinutes * 60
+
+        // 任何相位一律清零(含 .paused;必须在 switch 之前,否则暂停中合盖过夜回来计数仍是满的)。
+        if sleptEnoughForFullRest { consecutiveSkips = 0 }
+
         switch phase {
         case .resting:
-            if now >= deadline || config.wakeEndsRest {
-                startWork(now: now)
-                onRestEnded?(.wake)
+            if now >= deadline {
+                endRest(now: now, reason: .wake, restWasFull: true)
+            } else if config.wakeEndsRest {
+                // 未到点被掐断:离开/睡眠够一次休息时长也算休息过了,否则记一次逃避。
+                // 离开可早于休息开始(离开期间计时不冻结),故 now < deadline 不等于「没休息够」。
+                endRest(now: now, reason: .wake, restWasFull: sleptEnoughForFullRest)
             }
             // 未到点且 wake_ends_rest = off:遮罩继续,按墙钟走
         case .working, .warning:
-            if sleptFor >= config.restMinutes * 60 {
+            if sleptEnoughForFullRest {
                 startWork(now: now)                              // 睡够了,视为已休息
             } else {
                 deadline = deadline.addingTimeInterval(sleptFor) // 睡眠期间计时暂停
@@ -127,6 +136,41 @@ public final class BreakScheduler {
     }
 
     // MARK: - 私有
+
+    /// 0 = 不限。
+    private var skipsExhausted: Bool {
+        config.maxConsecutiveSkips > 0 && consecutiveSkips >= config.maxConsecutiveSkips
+    }
+
+    /// 结束休息:跑满了就清零连续计数;没跑满则算一次逃避 +1(require_full_rest = off 时一律清零)。
+    /// startWork 在前、onRestEnded 在后,维持既有回调顺序(见 testRestEndReasonFiresAfterPhaseChange)。
+    private func endRest(now: Date, reason: RestEndReason, restWasFull: Bool) {
+        if restWasFull || !config.requireFullRest {
+            consecutiveSkips = 0
+        } else {
+            consecutiveSkips += 1        // 没跑满 = 一次逃避,占额度
+        }
+        startWork(now: now)
+        onRestEnded?(reason)
+    }
+
+    /// 工作/预警到点:决定走「跳过」「预警」还是「休息」。
+    /// 跳过只在 armed 且未达上限时生效并 +1;达上限则作废勾选、落回正常路径(该给的预警照给)。
+    private func advancePastWorkDeadline(now: Date) {
+        if skipNextArmed {
+            skipNextArmed = false
+            if !skipsExhausted {
+                consecutiveSkips += 1
+                startWork(now: now)
+                return
+            }
+        }
+        if phase == .working, config.warnSeconds > 0 {
+            transition(to: .warning, deadline: now.addingTimeInterval(TimeInterval(config.warnSeconds)))
+        } else {
+            startRest(now: now)
+        }
+    }
 
     private func startWork(now: Date) {
         restStartedAt = nil
@@ -149,6 +193,7 @@ public final class BreakScheduler {
     private func tickInfo(now: Date) -> TickInfo {
         TickInfo(phase: phase,
                  remaining: max(0, deadline.timeIntervalSince(now)),
-                 unlockVisible: unlockVisible(now: now))
+                 unlockVisible: unlockVisible(now: now),
+                 skipsExhausted: skipsExhausted)
     }
 }

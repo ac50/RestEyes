@@ -16,6 +16,8 @@ public struct Config: Equatable {
     public var wakeEndsRest: Bool = true
     public var launchAtLogin: Bool = true
     public var lockOnUnlock: Bool = true
+    public var maxConsecutiveSkips: Int = 2
+    public var requireFullRest: Bool = true
 
     public init() {}
 
@@ -34,6 +36,8 @@ public struct Config: Equatable {
     wake_ends_rest = on    # 睡眠/锁屏/熄屏/屏保/合盖后唤醒或解锁时,直接结束休息回到工作(on/off)
     launch_at_login = on   # 开机自动启动(on/off)
     lock_on_unlock = on    # 点击「解锁」或 ESC×10 后进入系统锁屏,需输开机密码才回桌面(on/off)
+    max_consecutive_skips = 2   # 连续暂停/跳过几次后必须先完成一次休息;1 = 不允许连续;0 = 不限
+    require_full_rest = on      # 必须完整休息完才清零连续计数;off = 中途点「解锁」或被唤醒掐断也算(on/off)
     """
 
     public static var defaultURL: URL {
@@ -86,6 +90,11 @@ public struct Config: Equatable {
             case "lock_on_unlock":
                 if value == "on" { c.lockOnUnlock = true }
                 else if value == "off" { c.lockOnUnlock = false }
+            case "max_consecutive_skips":
+                if let v = Int(value), (0...100).contains(v) { c.maxConsecutiveSkips = v }
+            case "require_full_rest":
+                if value == "on" { c.requireFullRest = true }
+                else if value == "off" { c.requireFullRest = false }
             default:
                 continue
             }
